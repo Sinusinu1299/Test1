@@ -1,4 +1,4 @@
-name: Build Android Debug APK
+name: Build & Release Android Debug APK
 
 on:
   push:
@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-debug-apk:
@@ -21,13 +24,27 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android 35 SDK & Build Tools
+      - name: Configure Android 35 SDK & Build Tools
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          SDK_DIR="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          if [ ! -d "$SDK_DIR" ]; then
+            SDK_DIR="$HOME/Android/Sdk"
+            mkdir -p "$SDK_DIR/cmdline-tools"
+            curl -fsSL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o /tmp/cmdline-tools.zip
+            unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-unpack
+            mv /tmp/cmdline-unpack/cmdline-tools "$SDK_DIR/cmdline-tools/latest"
+          fi
+          echo "ANDROID_HOME=$SDK_DIR" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_DIR" >> "$GITHUB_ENV"
+          SDKMANAGER=$(find "$SDK_DIR/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -n 1)
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager not found in $SDK_DIR"
+            exit 1
+          fi
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+          echo "$SDK_DIR/platform-tools" >> "$GITHUB_PATH"
+          yes | "$SDKMANAGER" --sdk_root="$SDK_DIR" --licenses > /dev/null || true
+          "$SDKMANAGER" --sdk_root="$SDK_DIR" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -42,25 +59,26 @@ jobs:
         working-directory: android
         run: gradle lintDebug --no-daemon
 
-      - name: Verify Debug APK Integrity
+      - name: Verify & Package Debug APK
         run: |
           APK_PATH="android/app/build/outputs/apk/debug/app-debug.apk"
+          RELEASE_APK="android/app/build/outputs/apk/debug/mimi-ai-debug.apk"
           test -f "$APK_PATH"
           unzip -tq "$APK_PATH"
-          APK_SIZE=$(ls -lh "$APK_PATH" | awk '{print $5}')
+          cp "$APK_PATH" "$RELEASE_APK"
+          APK_SIZE=$(ls -lh "$RELEASE_APK" | awk '{print $5}')
           {
-            echo "## Mimi AI Debug APK Build Verified"
-            echo "- **Artifact:** \`mimi-ai-debug-apk\`"
+            echo "## Mimi AI Debug APK Build & Release Verified"
             echo "- **Package:** \`com.mimiai.assistant\`"
             echo "- **APK Size:** \`$APK_SIZE\`"
-            echo "- **Install:** Download \`mimi-ai-debug-apk\` from Artifacts above, unzip, and install \`app-debug.apk\` on Android."
+            echo "- **Release File:** \`mimi-ai-debug.apk\` (published to GitHub Releases & Actions Artifacts)"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: mimi-ai-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/debug/mimi-ai-debug.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -74,3 +92,17 @@ jobs:
             android/build/reports/
           if-no-files-found: ignore
           retention-days: 14
+
+      - name: Publish APK to GitHub Releases
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Mimi AI v1.0.${{ github.run_number }} (Debug APK)
+          body: |
+            Automatic Android Debug APK build for **Mimi AI** (Black Mode + All-in-One Girl Voice + Accessibility Phone Control).
+            Download **mimi-ai-debug.apk** below and install it on your Android phone.
+          files: android/app/build/outputs/apk/debug/mimi-ai-debug.apk
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -171,21 +171,29 @@ class MainActivity : ComponentActivity() {
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             voiceModes.forEach { (id, label) ->
-                                FilterChip(
-                                    selected = selectedPersona == id,
-                                    onClick = {
-                                        selectedPersona = id
-                                        reply = when (id) {
-                                            "jaan" -> "Hii meri Jaan! Main hamesha aapke saath hoon. Bolo kya karoon?"
-                                            "friendly" -> "Heyy bestie! Chill karo, bolo phone mein kya set karna hai?"
-                                            "flirty" -> "Hii handsome! Aaj bade pyaar se yaad kiya? Bolo kya command hai!"
-                                            "bubbly" -> "Hii! Main Mimi hoon — bolo aaj kya karna hai?"
-                                            "calm" -> "Hello... aaram se bolo, main pyaar se kar doongi."
-                                            else -> "Hii Jaan! All-in-One mode ready hai — Friendly, Flirty ya Phone Control, bolo!"
-                                        }
-                                    },
-                                    label = { Text(label) }
-                                )
+                                val isSelected = selectedPersona == id
+                                val onSelect: () -> Unit = {
+                                    selectedPersona = id
+                                    reply = when (id) {
+                                        "jaan" -> "Hii meri Jaan! Main hamesha aapke saath hoon. Bolo kya karoon?"
+                                        "friendly" -> "Heyy bestie! Chill karo, bolo phone mein kya set karna hai?"
+                                        "flirty" -> "Hii handsome! Aaj bade pyaar se yaad kiya? Bolo kya command hai!"
+                                        "bubbly" -> "Hii! Main Mimi hoon — bolo aaj kya karna hai?"
+                                        "calm" -> "Hello... aaram se bolo, main pyaar se kar doongi."
+                                        else -> "Hii Jaan! All-in-One mode ready hai — Friendly, Flirty ya Phone Control, bolo!"
+                                    }
+                                }
+                                if (isSelected) {
+                                    Button(
+                                        onClick = onSelect,
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                                    ) { Text(label) }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = onSelect,
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                                    ) { Text(label) }
+                                }
                             }
                         }
 

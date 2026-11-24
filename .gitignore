@@ -20,3 +20,5 @@ android/.idea/
 *.keystore
 *.jks
 captures/
+public/assets/aistudio/
+
