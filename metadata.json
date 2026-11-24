@@ -1,0 +1,6 @@
+{
+  "name": "Mimi AI",
+  "description": "Your personal cute-voice AI phone assistant with full device command orchestration, Hinglish voice recognition, and Android companion export.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

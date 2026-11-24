@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="coralBg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F43F5E" />
+      <stop offset="100%" stop-color="#E11D48" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#coralBg)" />
+  <path d="M126 226V286" stroke="#FFFFFF" stroke-width="28" stroke-linecap="round" />
+  <path d="M174 182V330" stroke="#FFFFFF" stroke-width="28" stroke-linecap="round" />
+  <path d="M338 182V330" stroke="#FFFFFF" stroke-width="28" stroke-linecap="round" />
+  <path d="M386 226V286" stroke="#FFFFFF" stroke-width="28" stroke-linecap="round" />
+  <path d="M214 224C214 208 228 196 244 196" stroke="#FFFFFF" stroke-width="24" stroke-linecap="round" />
+  <path d="M298 224C298 208 284 196 268 196" stroke="#FFFFFF" stroke-width="24" stroke-linecap="round" />
+  <path d="M210 272C220 304 242 320 256 320C270 320 292 304 302 272" stroke="#FFFFFF" stroke-width="26" stroke-linecap="round" />
+</svg>
