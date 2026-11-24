@@ -24,7 +24,7 @@ export function AndroidProjectExport() {
   const [copiedGit, setCopiedGit] = useState(false);
   const [downloadingZip, setDownloadingZip] = useState(false);
   const [apkReady, setApkReady] = useState(false);
-  const [githubRepo, setGithubRepo] = useState('');
+  const [githubRepo, setGithubRepo] = useState('Sinusinu1299/Test1');
 
   const originUrl =
     typeof window !== 'undefined'
@@ -41,8 +41,8 @@ export function AndroidProjectExport() {
     .replace(/^\/+|\/+$/g, '');
 
   const gitPushCommand = cleanRepoSlug
-    ? `git remote add origin https://github.com/${cleanRepoSlug}.git || git remote set-url origin https://github.com/${cleanRepoSlug}.git\ngit add -A && git commit -m "Mimi AI: All-in-One Girl Voice, Black Mode & GitHub Debug" && git push -u origin main`
-    : `git add -A && git commit -m "Mimi AI: All-in-One Girl Voice, Black Mode & GitHub Debug"\ngit remote add origin https://github.com/<USERNAME>/<REPO>.git && git push -u origin main`;
+    ? `git remote add origin https://github.com/${cleanRepoSlug}.git || git remote set-url origin https://github.com/${cleanRepoSlug}.git\ngit add -A && git commit -m "Jassi AI: Custom Kunal Calling, Animated Voice & A-to-Z Phone Control" && git push -u origin main`
+    : `git add -A && git commit -m "Jassi AI: Custom Kunal Calling, Animated Voice & A-to-Z Phone Control"\ngit remote add origin https://github.com/<USERNAME>/<REPO>.git && git push -u origin main`;
 
   useEffect(() => {
     let active = true;
@@ -89,7 +89,7 @@ export function AndroidProjectExport() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'MimiAI-Android-GitHub-Ready.zip';
+      a.download = 'JassiAI-Android-GitHub-Ready.zip';
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -108,13 +108,13 @@ export function AndroidProjectExport() {
             <h3 className="text-base font-bold text-stone-900 dark:text-zinc-100">1. Direct Debug APK</h3>
           </div>
           <p className="mt-2 text-sm leading-relaxed text-stone-600 dark:text-zinc-400">
-            Configured with <code className="font-mono text-xs text-stone-800 dark:text-zinc-200">isDebuggable = true</code>, Black Mode UI, All-in-One Girl Voice, and Direct Debug Console.
+            Configured with <code className="font-mono text-xs text-stone-800 dark:text-zinc-200">isDebuggable = true</code>, Jassi Portrait &amp; App Logo, Custom Name Calling, and A-to-Z Phone Access.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-2.5">
             {apkReady ? (
               <a
                 href="/api/android-apk"
-                download="mimi-ai-debug.apk"
+                download="jassi-ai-debug.apk"
                 className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-rose-700 min-h-[44px]"
               >
                 <Download className="h-4 w-4" aria-hidden="true" />
@@ -252,8 +252,8 @@ export function AndroidProjectExport() {
         </div>
         <ol className="mt-2 grid gap-1.5 sm:grid-cols-3">
           <li>1. Enable <strong>Install unknown apps</strong> (for GitHub APK) or <strong>USB Debugging</strong> (for ADB).</li>
-          <li>2. Install <code className="font-mono text-stone-800 dark:text-zinc-200">app-debug.apk</code> from <strong>mimi-ai-debug-apk</strong> artifact.</li>
-          <li>3. Tap <strong>Enable Accessibility Service</strong> inside Mimi AI for full phone control.</li>
+          <li>2. Install <code className="font-mono text-stone-800 dark:text-zinc-200">jassi-ai-debug.apk</code> from <strong>Releases</strong> or <strong>jassi-ai-debug-apk</strong> artifact.</li>
+          <li>3. Tap <strong>Enable A-to-Z Accessibility Service</strong> inside Jassi AI for full phone control.</li>
         </ol>
       </div>
 

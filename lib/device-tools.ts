@@ -24,6 +24,8 @@ export interface PhoneState {
   location: boolean;
   autoRotate: boolean;
   airplaneMode: boolean;
+  hotspot: boolean;
+  batterySaver: boolean;
   brightness: number;
   volume: number;
   batteryLevel: number;
@@ -45,11 +47,13 @@ export const INITIAL_PHONE_STATE: PhoneState = {
   location: true,
   autoRotate: true,
   airplaneMode: false,
+  hotspot: false,
+  batterySaver: false,
   brightness: 68,
   volume: 60,
   batteryLevel: 84,
   batteryCharging: false,
-  activeApp: 'Mimi Home',
+  activeApp: 'Jassi Home',
   musicPlaying: false,
   currentTrack: 'Kesariya — Arijit Singh',
   lastCall: null,
@@ -70,14 +74,14 @@ export const DEVICE_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: 'toggleSystemSetting',
     description:
-      'Turn phone system toggles ON or OFF: wifi, bluetooth, flashlight, dnd (do not disturb / silent), mobileData, location, autoRotate, airplaneMode.',
+      'Turn phone system toggles ON or OFF: wifi, bluetooth, flashlight, dnd (do not disturb / silent), mobileData, location, autoRotate, airplaneMode, hotspot, batterySaver.',
     parameters: {
       type: Type.OBJECT,
       properties: {
         setting: {
           type: Type.STRING,
           description:
-            'One of: wifi, bluetooth, flashlight, dnd, mobileData, location, autoRotate, airplaneMode',
+            'One of: wifi, bluetooth, flashlight, dnd, mobileData, location, autoRotate, airplaneMode, hotspot, batterySaver',
         },
         enabled: {
           type: Type.BOOLEAN,
@@ -108,17 +112,17 @@ export const DEVICE_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: 'openApp',
     description:
-      'Open an application on the phone such as YouTube, WhatsApp, Instagram, Camera, Maps, Spotify, Chrome, Settings, Gallery, Clock, Phone, or Messages.',
+      'Open ANY application on the phone: YouTube, WhatsApp, Instagram, Camera, Maps, Spotify, Chrome, Settings, Gallery, Clock, Phone, Messages, Calculator, Calendar, Gmail, Telegram, Snapchat, Files, PlayStore.',
     parameters: {
       type: Type.OBJECT,
       properties: {
         appName: {
           type: Type.STRING,
-          description: 'Name of the app to open (e.g., YouTube, WhatsApp, Maps, Spotify, Camera)',
+          description: 'Name of the app to open (e.g., YouTube, WhatsApp, Maps, Spotify, Camera, Settings)',
         },
         query: {
           type: Type.STRING,
-          description: 'Optional search query or destination to pass to the app',
+          description: 'Optional search query, song, video, or destination to pass to the app',
         },
       },
       required: ['appName'],
@@ -126,7 +130,7 @@ export const DEVICE_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
   },
   {
     name: 'makeCall',
-    description: 'Place a phone call to a contact name or phone number.',
+    description: 'Place a direct phone call to a contact name (resolved from Contacts) or phone number.',
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -140,7 +144,7 @@ export const DEVICE_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
   },
   {
     name: 'sendMessage',
-    description: 'Send a text message via WhatsApp or SMS to a contact or phone number.',
+    description: 'Draft or send a message via WhatsApp or SMS to a contact name or phone number.',
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -162,17 +166,21 @@ export const DEVICE_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
   },
   {
     name: 'setAlarmOrTimer',
-    description: 'Set an alarm for a specific time (HH:MM 24h) or add a quick timer.',
+    description: 'Set an alarm for a specific time (HH:MM 24h) OR set a countdown timer in minutes/seconds.',
     parameters: {
       type: Type.OBJECT,
       properties: {
         time: {
           type: Type.STRING,
-          description: 'Time in HH:MM format (e.g., 07:00, 18:30)',
+          description: 'Alarm time in HH:MM format (e.g., 07:00, 18:30) or timer duration like "5m"',
         },
         label: {
           type: Type.STRING,
           description: 'Label for the alarm or timer',
+        },
+        timerSeconds: {
+          type: Type.NUMBER,
+          description: 'Optional countdown timer duration in seconds (e.g. 300 for 5 minutes)',
         },
       },
       required: ['time', 'label'],
@@ -180,7 +188,7 @@ export const DEVICE_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
   },
   {
     name: 'controlMedia',
-    description: 'Play, pause, or change music track on the phone.',
+    description: 'Play, pause, skip next, or go previous track on the phone media player.',
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -197,20 +205,52 @@ export const DEVICE_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
   {
+    name: 'searchWebOrMaps',
+    description: 'Search Google, find places/directions on Maps, or open any website URL.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        mode: {
+          type: Type.STRING,
+          description: 'One of: google, maps, youtube, url',
+        },
+        query: {
+          type: Type.STRING,
+          description: 'Search query, destination, or full https URL',
+        },
+      },
+      required: ['mode', 'query'],
+    },
+  },
+  {
+    name: 'takePhotoOrVideo',
+    description: 'Open phone Camera to take a photo, selfie, or record video.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        mode: {
+          type: Type.STRING,
+          description: 'One of: photo, selfie, video',
+        },
+      },
+      required: ['mode'],
+    },
+  },
+  {
     name: 'performScreenGesture',
     description:
-      'Execute Android Accessibility navigation or touch gestures across the screen: home, back, recents, notifications, scroll_down, scroll_up, screenshot, lock_screen, tap_text.',
+      'Execute A-to-Z Android Accessibility navigation, touch, or text input gestures across ANY app on screen: home, back, recents, notifications, quick_settings, split_screen, power_dialog, scroll_down, scroll_up, swipe_left, swipe_right, screenshot, lock_screen, tap_text, type_text.',
     parameters: {
       type: Type.OBJECT,
       properties: {
         gesture: {
           type: Type.STRING,
           description:
-            'One of: home, back, recents, notifications, scroll_down, scroll_up, screenshot, lock_screen, tap_text',
+            'One of: home, back, recents, notifications, quick_settings, split_screen, power_dialog, scroll_down, scroll_up, swipe_left, swipe_right, screenshot, lock_screen, tap_text, type_text',
         },
         targetText: {
           type: Type.STRING,
-          description: 'When gesture is tap_text, the visible UI text to tap',
+          description: 'When gesture is tap_text or type_text, the visible UI text to tap or text to type',
         },
       },
       required: ['gesture'],
@@ -230,6 +270,8 @@ const APP_DEEP_LINKS: Record<string, (q?: string) => string> = {
   instagram: () => 'https://www.instagram.com',
   chrome: (q) =>
     q ? `https://www.google.com/search?q=${encodeURIComponent(q)}` : 'https://www.google.com',
+  gmail: () => 'https://mail.google.com',
+  telegram: () => 'https://web.telegram.org',
 };
 
 export function executeDeviceTool(
@@ -254,6 +296,8 @@ export function executeDeviceTool(
       'location',
       'autoRotate',
       'airplaneMode',
+      'hotspot',
+      'batterySaver',
     ] as const;
 
     if (validKeys.includes(setting as (typeof validKeys)[number])) {
@@ -263,6 +307,7 @@ export function executeDeviceTool(
         next.wifi = false;
         next.mobileData = false;
         next.bluetooth = false;
+        next.hotspot = false;
       }
       return {
         nextState: next,
@@ -325,7 +370,7 @@ export function executeDeviceTool(
     next.lastCall = contactOrNumber;
     next.activeApp = 'Phone';
     const digits = contactOrNumber.replace(/[^+\d]/g, '');
-    const launchUri = digits.length >= 3 ? `tel:${digits}` : undefined;
+    const launchUri = digits.length >= 3 ? `tel:${digits}` : `tel:${encodeURIComponent(contactOrNumber)}`;
     return {
       nextState: next,
       action: {
@@ -334,7 +379,7 @@ export function executeDeviceTool(
         launchUri,
         vibrateMs: 80,
       },
-      toolResult: { success: true, calling: contactOrNumber, telUri: launchUri || null },
+      toolResult: { success: true, calling: contactOrNumber, telUri: launchUri },
     };
   }
 
@@ -349,13 +394,15 @@ export function executeDeviceTool(
     const launchUri =
       platform === 'sms'
         ? `sms:${digits}?body=${encodeURIComponent(text)}`
-        : `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
+        : digits.length >= 6
+          ? `https://wa.me/${digits}?text=${encodeURIComponent(text)}`
+          : `https://wa.me/?text=${encodeURIComponent(text)}`;
 
     return {
       nextState: next,
       action: {
         tool: name,
-        summary: `Sent ${platform === 'sms' ? 'SMS' : 'WhatsApp'} to ${recipient}`,
+        summary: `Prepared ${platform === 'sms' ? 'SMS' : 'WhatsApp'} to ${recipient}`,
         launchUri,
         vibrateMs: 50,
       },
@@ -365,17 +412,20 @@ export function executeDeviceTool(
 
   if (name === 'setAlarmOrTimer') {
     const time = String(args.time || '07:30');
-    const label = String(args.label || 'Mimi Reminder');
+    const label = String(args.label || 'Jassi Reminder');
+    const timerSeconds = args.timerSeconds ? Number(args.timerSeconds) : undefined;
     const id = `alarm-${Date.now()}`;
     next.alarms.unshift({ id, time, label, active: true });
     return {
       nextState: next,
       action: {
         tool: name,
-        summary: `Alarm set for ${time} · ${label}`,
+        summary: timerSeconds
+          ? `Timer set: ${timerSeconds}s · ${label}`
+          : `Alarm set for ${time} · ${label}`,
         vibrateMs: 50,
       },
-      toolResult: { success: true, time, label },
+      toolResult: { success: true, time, label, timerSeconds: timerSeconds || null },
     };
   }
 
@@ -411,17 +461,59 @@ export function executeDeviceTool(
     };
   }
 
+  if (name === 'searchWebOrMaps') {
+    const mode = String(args.mode || 'google').toLowerCase();
+    const query = String(args.query || '');
+    const launchUri =
+      mode === 'maps'
+        ? `https://maps.google.com/?q=${encodeURIComponent(query)}`
+        : mode === 'youtube'
+          ? `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`
+          : mode === 'url' && query.startsWith('http')
+            ? query
+            : `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+    next.activeApp = mode === 'maps' ? 'Maps' : mode === 'youtube' ? 'YouTube' : 'Chrome';
+    return {
+      nextState: next,
+      action: {
+        tool: name,
+        summary: `Search (${mode}): ${query}`,
+        launchUri,
+        vibrateMs: 35,
+      },
+      toolResult: { success: true, mode, query, launchUri },
+    };
+  }
+
+  if (name === 'takePhotoOrVideo') {
+    const mode = String(args.mode || 'photo').toLowerCase();
+    next.activeApp = 'Camera';
+    return {
+      nextState: next,
+      action: {
+        tool: name,
+        summary: `Camera ready (${mode})`,
+        vibrateMs: 40,
+      },
+      toolResult: { success: true, mode },
+    };
+  }
+
   if (name === 'performScreenGesture') {
     const gesture = String(args.gesture || 'home');
     const targetText = args.targetText ? String(args.targetText) : undefined;
     if (gesture === 'home') {
-      next.activeApp = 'Mimi Home';
+      next.activeApp = 'Jassi Home';
     }
     return {
       nextState: next,
       action: {
         tool: name,
-        summary: targetText ? `Tapped "${targetText}"` : `Gesture: ${gesture.replace('_', ' ')}`,
+        summary: targetText
+          ? gesture === 'type_text'
+            ? `Typed "${targetText}"`
+            : `Tapped "${targetText}"`
+          : `Gesture: ${gesture.replace('_', ' ')}`,
         vibrateMs: 30,
       },
       toolResult: { success: true, gesture, targetText: targetText || null },

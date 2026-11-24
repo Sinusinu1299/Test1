@@ -28,29 +28,29 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: 'Mimi AI — Voice Phone Assistant',
+  title: 'Jassi AI — Voice Phone Companion',
   description:
-    'Your personal cute-voice AI phone assistant with full device command orchestration, Hinglish voice recognition, and Android companion export.',
+    'Your personal glamorous-voice AI phone companion (Jassi) with A-to-Z phone control, custom name calling, Hinglish voice recognition, and Android companion export.',
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'default',
-    title: 'Mimi AI',
+    statusBarStyle: 'black-translucent',
+    title: 'Jassi AI',
   },
   icons: {
-    icon: '/icon.svg',
+    icon: '/pwa-192x192.png',
     apple: '/apple-touch-icon.png',
   },
   openGraph: {
-    title: 'Mimi AI — Voice Phone Assistant',
+    title: 'Jassi AI — Voice Phone Companion',
     description:
-      'Your personal cute-voice AI phone assistant with full device command orchestration, Hinglish voice recognition, and Android companion export.',
+      'Your personal glamorous-voice AI phone companion (Jassi) with A-to-Z phone control, custom name calling, Hinglish voice recognition, and Android companion export.',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Mimi AI — Voice Phone Assistant',
+    title: 'Jassi AI — Voice Phone Companion',
     description:
-      'Your personal cute-voice AI phone assistant with full device command orchestration, Hinglish voice recognition, and Android companion export.',
+      'Your personal glamorous-voice AI phone companion (Jassi) with A-to-Z phone control, custom name calling, Hinglish voice recognition, and Android companion export.',
   },
 };
 

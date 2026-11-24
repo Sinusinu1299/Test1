@@ -10,10 +10,11 @@ import {
   MapPin,
   RotateCw,
   Plane,
-  Sun,
-  Volume2,
+  Radio,
   BatteryCharging,
   Battery,
+  Sun,
+  Volume2,
   AlarmClock,
   PhoneCall,
   MessageSquare,
@@ -22,16 +23,28 @@ import {
   Music,
   Play,
   Pause,
+  Zap,
 } from 'lucide-react';
 import { ActionLogItem, PhoneState } from '@/lib/device-tools';
+
+type ToggleKey = keyof Pick<
+  PhoneState,
+  | 'wifi'
+  | 'bluetooth'
+  | 'flashlight'
+  | 'dnd'
+  | 'mobileData'
+  | 'location'
+  | 'autoRotate'
+  | 'airplaneMode'
+  | 'hotspot'
+  | 'batterySaver'
+>;
 
 interface PhoneControlPanelProps {
   phoneState: PhoneState;
   actionLog: ActionLogItem[];
-  onToggleSetting: (key: keyof Pick<
-    PhoneState,
-    'wifi' | 'bluetooth' | 'flashlight' | 'dnd' | 'mobileData' | 'location' | 'autoRotate' | 'airplaneMode'
-  >) => void;
+  onToggleSetting: (key: ToggleKey) => void;
   onChangeLevel: (target: 'brightness' | 'volume', level: number) => void;
   onToggleAlarm: (id: string) => void;
   onDeleteAlarm: (id: string) => void;
@@ -43,6 +56,8 @@ const QUICK_APPS = [
   { name: 'WhatsApp', href: 'https://wa.me/', detail: 'Chats & Calls' },
   { name: 'Maps', href: 'https://maps.google.com', detail: 'Navigation' },
   { name: 'Spotify', href: 'https://open.spotify.com', detail: 'Audio Stream' },
+  { name: 'Instagram', href: 'https://www.instagram.com', detail: 'Reels & Social' },
+  { name: 'Google Search', href: 'https://www.google.com', detail: 'Web Search' },
 ];
 
 export function PhoneControlPanel({
@@ -55,10 +70,7 @@ export function PhoneControlPanel({
   onToggleMusic,
 }: PhoneControlPanelProps) {
   const toggles: {
-    key: keyof Pick<
-      PhoneState,
-      'wifi' | 'bluetooth' | 'flashlight' | 'dnd' | 'mobileData' | 'location' | 'autoRotate' | 'airplaneMode'
-    >;
+    key: ToggleKey;
     label: string;
     icon: React.ComponentType<{ className?: string }>;
   }[] = [
@@ -67,8 +79,10 @@ export function PhoneControlPanel({
     { key: 'flashlight', label: 'Flashlight', icon: Flashlight },
     { key: 'dnd', label: 'Silent / DND', icon: BellOff },
     { key: 'mobileData', label: 'Mobile Data', icon: Signal },
+    { key: 'hotspot', label: 'Hotspot', icon: Radio },
     { key: 'location', label: 'Location', icon: MapPin },
     { key: 'autoRotate', label: 'Auto Rotate', icon: RotateCw },
+    { key: 'batterySaver', label: 'Battery Saver', icon: Zap },
     { key: 'airplaneMode', label: 'Airplane', icon: Plane },
   ];
 
@@ -88,7 +102,7 @@ export function PhoneControlPanel({
             {phoneState.batteryLevel}%
           </p>
           <p className="mt-0.5 text-xs text-stone-500 dark:text-zinc-400">
-            {phoneState.batteryCharging ? 'Charging' : 'On battery'}
+            {phoneState.batteryCharging ? 'Charging' : phoneState.batterySaver ? 'Saver On' : 'On battery'}
           </p>
         </div>
 
@@ -100,7 +114,7 @@ export function PhoneControlPanel({
             {phoneState.activeApp}
           </p>
           <p className="mt-0.5 text-xs text-stone-500 dark:text-zinc-400">
-            {phoneState.flashlight ? 'Torch active' : 'Ready for command'}
+            {phoneState.flashlight ? 'Torch active' : 'A-to-Z Ready'}
           </p>
         </div>
 
@@ -132,14 +146,14 @@ export function PhoneControlPanel({
       <section aria-labelledby="quick-toggles-heading">
         <div className="mb-3 flex items-center justify-between">
           <h3 id="quick-toggles-heading" className="text-sm font-semibold text-stone-900 dark:text-zinc-100">
-            Quick Phone Controls
+            A-to-Z Phone Controls
           </h3>
           <span className="text-xs text-stone-500 dark:text-zinc-400">
             Voice or tap to toggle
           </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
           {toggles.map((item) => {
             const Icon = item.icon;
             const active = phoneState[item.key];
@@ -149,7 +163,7 @@ export function PhoneControlPanel({
                 type="button"
                 onClick={() => onToggleSetting(item.key)}
                 aria-pressed={active}
-                className={`flex min-h-[56px] items-center gap-3 rounded-2xl border px-3.5 py-3 text-left transition-colors active:scale-[0.98] ${
+                className={`flex min-h-[56px] items-center gap-2.5 rounded-2xl border px-3 py-3 text-left transition-colors active:scale-[0.98] ${
                   active
                     ? 'border-rose-200 bg-rose-600 text-white dark:border-rose-500'
                     : 'border-stone-200 bg-white text-stone-800 hover:bg-stone-50 dark:border-zinc-800 dark:bg-[#121216] dark:text-zinc-200 dark:hover:bg-zinc-900'
@@ -220,7 +234,7 @@ export function PhoneControlPanel({
           <div className="mb-3 flex items-center justify-between">
             <h4 className="inline-flex items-center gap-1.5 text-sm font-semibold text-stone-900 dark:text-zinc-100">
               <AlarmClock className="h-4 w-4 text-stone-500 dark:text-zinc-400" aria-hidden="true" />
-              Alarms
+              Alarms &amp; Timers
             </h4>
             <span className="text-xs tabular-nums text-stone-500 dark:text-zinc-400">
               {phoneState.alarms.length} set
@@ -229,7 +243,7 @@ export function PhoneControlPanel({
 
           {phoneState.alarms.length === 0 ? (
             <p className="text-xs text-stone-500 dark:text-zinc-400">
-              No alarms set. Say &ldquo;Subah 7 baje ka alarm lagao&rdquo;.
+              No alarms set. Say &ldquo;Subah 7 baje ka alarm lagao Jassi&rdquo;.
             </p>
           ) : (
             <ul className="divide-y divide-stone-100 dark:divide-zinc-800">

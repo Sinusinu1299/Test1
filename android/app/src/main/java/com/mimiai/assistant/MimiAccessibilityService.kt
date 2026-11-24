@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.os.Build
+import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 
@@ -34,6 +35,13 @@ class MimiAccessibilityService : AccessibilityService() {
             "back" -> performGlobalAction(GLOBAL_ACTION_BACK)
             "recents" -> performGlobalAction(GLOBAL_ACTION_RECENTS)
             "notifications" -> performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+            "quick_settings" -> performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)
+            "power_dialog" -> performGlobalAction(GLOBAL_ACTION_POWER_DIALOG)
+            "split_screen" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                performGlobalAction(GLOBAL_ACTION_TOGGLE_SPLIT_SCREEN)
+            } else {
+                false
+            }
             "lock_screen" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
             } else {
@@ -46,7 +54,10 @@ class MimiAccessibilityService : AccessibilityService() {
             }
             "scroll_down" -> performSwipe(540f, 1500f, 540f, 500f)
             "scroll_up" -> performSwipe(540f, 500f, 540f, 1500f)
+            "swipe_left" -> performSwipe(920f, 1000f, 160f, 1000f)
+            "swipe_right" -> performSwipe(160f, 1000f, 920f, 1000f)
             "tap_text" -> if (!targetText.isNullOrBlank()) tapNodeByText(targetText) else false
+            "type_text" -> if (!targetText.isNullOrBlank()) typeIntoFocusedField(targetText) else false
             else -> false
         }
     }
@@ -73,5 +84,13 @@ class MimiAccessibilityService : AccessibilityService() {
             }
         }
         return false
+    }
+
+    private fun typeIntoFocusedField(text: String): Boolean {
+        val focused = findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return false
+        val args = Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        }
+        return focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
     }
 }

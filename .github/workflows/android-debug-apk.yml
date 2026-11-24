@@ -62,23 +62,23 @@ jobs:
       - name: Verify & Package Debug APK
         run: |
           APK_PATH="android/app/build/outputs/apk/debug/app-debug.apk"
-          RELEASE_APK="android/app/build/outputs/apk/debug/mimi-ai-debug.apk"
+          RELEASE_APK="android/app/build/outputs/apk/debug/jassi-ai-debug.apk"
           test -f "$APK_PATH"
           unzip -tq "$APK_PATH"
           cp "$APK_PATH" "$RELEASE_APK"
           APK_SIZE=$(ls -lh "$RELEASE_APK" | awk '{print $5}')
           {
-            echo "## Mimi AI Debug APK Build & Release Verified"
+            echo "## Jassi AI Debug APK Build & Release Verified"
             echo "- **Package:** \`com.mimiai.assistant\`"
             echo "- **APK Size:** \`$APK_SIZE\`"
-            echo "- **Release File:** \`mimi-ai-debug.apk\` (published to GitHub Releases & Actions Artifacts)"
+            echo "- **Release File:** \`jassi-ai-debug.apk\` (published to GitHub Releases & Actions Artifacts)"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mimi-ai-debug-apk
-          path: android/app/build/outputs/apk/debug/mimi-ai-debug.apk
+          name: jassi-ai-debug-apk
+          path: android/app/build/outputs/apk/debug/jassi-ai-debug.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -86,7 +86,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mimi-ai-debug-reports
+          name: jassi-ai-debug-reports
           path: |
             android/app/build/reports/
             android/build/reports/
@@ -98,11 +98,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
-          name: Mimi AI v1.0.${{ github.run_number }} (Debug APK)
+          name: Jassi AI v1.0.${{ github.run_number }} (Debug APK)
           body: |
-            Automatic Android Debug APK build for **Mimi AI** (Black Mode + All-in-One Girl Voice + Accessibility Phone Control).
-            Download **mimi-ai-debug.apk** below and install it on your Android phone.
-          files: android/app/build/outputs/apk/debug/mimi-ai-debug.apk
+            Automatic Android Debug APK build for **Jassi AI** (Glamorous Avatar & App Logo + Animated Talking Orb + Custom Name Calling + A-to-Z Phone Control + Black Mode).
+            Download **jassi-ai-debug.apk** below and install it on your Android phone.
+          files: android/app/build/outputs/apk/debug/jassi-ai-debug.apk
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

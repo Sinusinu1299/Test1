@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import Image from 'next/image';
 import {
   Send,
   Smartphone,
@@ -12,6 +13,8 @@ import {
   AlertCircle,
   Moon,
   Sun,
+  UserCheck,
+  Sparkles,
 } from 'lucide-react';
 import {
   ActionLogItem,
@@ -24,21 +27,31 @@ import { PhoneControlPanel } from '@/components/PhoneControlPanel';
 import { AndroidProjectExport } from '@/components/AndroidProjectExport';
 import { PWAInstallButton } from '@/components/PWAInstallButton';
 import {
+  DEFAULT_AI_NAME,
+  DEFAULT_USER_NAME,
   VOICE_PERSONAS,
   getVoicePersonaConfig,
   type VoicePersonaId,
 } from '@/lib/voice-personas';
 
-const THEME_STORAGE_KEY = 'mimi-black-mode';
+const THEME_STORAGE_KEY = 'jassi-black-mode';
+const USER_NAME_STORAGE_KEY = 'jassi-user-name';
+const AI_NAME_STORAGE_KEY = 'jassi-ai-name';
 
-function subscribeTheme(callback: () => void) {
-  window.addEventListener('storage', callback);
-  window.addEventListener('mimi-theme-change', callback);
-  return () => {
-    window.removeEventListener('storage', callback);
-    window.removeEventListener('mimi-theme-change', callback);
+function subscribeLocalStore(eventName: string) {
+  return (callback: () => void) => {
+    window.addEventListener('storage', callback);
+    window.addEventListener(eventName, callback);
+    return () => {
+      window.removeEventListener('storage', callback);
+      window.removeEventListener(eventName, callback);
+    };
   };
 }
+
+const subscribeTheme = subscribeLocalStore('jassi-theme-change');
+const subscribeUserName = subscribeLocalStore('jassi-user-name-change');
+const subscribeAiName = subscribeLocalStore('jassi-ai-name-change');
 
 function getThemeSnapshot(): boolean {
   if (typeof window === 'undefined') return true;
@@ -46,8 +59,14 @@ function getThemeSnapshot(): boolean {
   return saved === null ? true : saved === 'true';
 }
 
-function getThemeServerSnapshot(): boolean {
-  return true;
+function getUserNameSnapshot(): string {
+  if (typeof window === 'undefined') return DEFAULT_USER_NAME;
+  return window.localStorage.getItem(USER_NAME_STORAGE_KEY) || DEFAULT_USER_NAME;
+}
+
+function getAiNameSnapshot(): string {
+  if (typeof window === 'undefined') return DEFAULT_AI_NAME;
+  return window.localStorage.getItem(AI_NAME_STORAGE_KEY) || DEFAULT_AI_NAME;
 }
 
 interface MessageItem {
@@ -63,12 +82,15 @@ type MobileTab = 'assistant' | 'controls' | 'android';
 
 const QUICK_COMMANDS = [
   'Flashlight on karo',
-  'Brightness 35% kar do',
+  'Hotspot on karo',
   'YouTube par lofi chalao',
-  'Subah 6:30 ka alarm lagao',
-  'Silent mode on karo',
+  '5 minute ka timer lagao',
+  'Brightness 40% kar do',
   'Mummy ko call lagao',
+  'Google pe weather search karo',
 ];
+
+const CALL_ME_PRESETS = ['Kunal', 'Jaanu', 'Baby', 'Hero', 'Dost'];
 
 interface SpeechRecognitionAlternativeLike {
   transcript: string;
@@ -94,10 +116,16 @@ interface SpeechRecognitionInstanceLike {
 }
 
 export function MimiAssistantShell() {
-  const blackMode = useSyncExternalStore(
-    subscribeTheme,
-    getThemeSnapshot,
-    getThemeServerSnapshot
+  const blackMode = useSyncExternalStore(subscribeTheme, getThemeSnapshot, () => true);
+  const userName = useSyncExternalStore(
+    subscribeUserName,
+    getUserNameSnapshot,
+    () => DEFAULT_USER_NAME
+  );
+  const aiName = useSyncExternalStore(
+    subscribeAiName,
+    getAiNameSnapshot,
+    () => DEFAULT_AI_NAME
   );
 
   useEffect(() => {
@@ -108,7 +136,27 @@ export function MimiAssistantShell() {
     const next = !blackMode;
     window.localStorage.setItem(THEME_STORAGE_KEY, String(next));
     document.documentElement.classList.toggle('dark', next);
-    window.dispatchEvent(new Event('mimi-theme-change'));
+    window.dispatchEvent(new Event('jassi-theme-change'));
+  };
+
+  const updateUserName = (nextName: string) => {
+    const clean = nextName.slice(0, 24);
+    if (!clean.trim()) {
+      window.localStorage.removeItem(USER_NAME_STORAGE_KEY);
+    } else {
+      window.localStorage.setItem(USER_NAME_STORAGE_KEY, clean);
+    }
+    window.dispatchEvent(new Event('jassi-user-name-change'));
+  };
+
+  const updateAiName = (nextName: string) => {
+    const clean = nextName.slice(0, 24);
+    if (!clean.trim()) {
+      window.localStorage.removeItem(AI_NAME_STORAGE_KEY);
+    } else {
+      window.localStorage.setItem(AI_NAME_STORAGE_KEY, clean);
+    }
+    window.dispatchEvent(new Event('jassi-ai-name-change'));
   };
 
   const [phoneState, setPhoneState] = useState<PhoneState>(INITIAL_PHONE_STATE);
@@ -116,7 +164,7 @@ export function MimiAssistantShell() {
     {
       id: 'welcome-1',
       role: 'assistant',
-      text: getVoicePersonaConfig('all_in_one').greetingText,
+      text: getVoicePersonaConfig('all_in_one').buildGreeting(DEFAULT_AI_NAME, DEFAULT_USER_NAME),
     },
   ]);
   const [actionLog, setActionLog] = useState<ActionLogItem[]>([]);
@@ -124,6 +172,8 @@ export function MimiAssistantShell() {
   const [phase, setPhase] = useState<AssistantPhase>('idle');
   const [persona, setPersona] = useState<VoicePersonaId>('all_in_one');
   const [voiceMuted, setVoiceMuted] = useState(false);
+  const [handsFree, setHandsFree] = useState(false);
+  const [showCustomNamePanel, setShowCustomNamePanel] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [desktopRightTab, setDesktopRightTab] = useState<DesktopRightTab>('controls');
   const [mobileTab, setMobileTab] = useState<MobileTab>('assistant');
@@ -133,6 +183,7 @@ export function MimiAssistantShell() {
   const recognitionRef = useRef<SpeechRecognitionInstanceLike | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const handleToggleMicRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     const nav = navigator as Navigator & {
@@ -177,7 +228,7 @@ export function MimiAssistantShell() {
     setPhase((prev) => (prev === 'speaking' ? 'idle' : prev));
   }, []);
 
-  const speakWithMimiVoice = useCallback(
+  const speakWithJassiVoice = useCallback(
     async (text: string, overridePersona?: VoicePersonaId) => {
       if (voiceMuted || !text.trim()) return;
       stopAudio();
@@ -197,6 +248,9 @@ export function MimiAssistantShell() {
         audio.onended = () => {
           setPhase('idle');
           audioRef.current = null;
+          if (handsFree) {
+            setTimeout(() => handleToggleMicRef.current(), 350);
+          }
         };
         audio.onerror = () => {
           setPhase('idle');
@@ -208,7 +262,7 @@ export function MimiAssistantShell() {
         setErrorMsg(err instanceof Error ? err.message : 'Unable to play cute voice.');
       }
     },
-    [persona, stopAudio, voiceMuted]
+    [handsFree, persona, stopAudio, voiceMuted]
   );
 
   const sendCommand = useCallback(
@@ -240,6 +294,8 @@ export function MimiAssistantShell() {
           body: JSON.stringify({
             message: command,
             persona,
+            aiName,
+            userName,
             history,
             phoneState,
           }),
@@ -284,7 +340,7 @@ export function MimiAssistantShell() {
         setMessages((prev) => [...prev, assistantMsg]);
 
         if (!voiceMuted) {
-          await speakWithMimiVoice(data.replyText);
+          await speakWithJassiVoice(data.replyText);
         } else {
           setPhase('idle');
         }
@@ -293,7 +349,7 @@ export function MimiAssistantShell() {
         setErrorMsg(err instanceof Error ? err.message : 'Something went wrong.');
       }
     },
-    [messages, persona, phoneState, speakWithMimiVoice, stopAudio, voiceMuted]
+    [aiName, messages, persona, phoneState, speakWithJassiVoice, stopAudio, userName, voiceMuted]
   );
 
   const startFallbackRecording = async () => {
@@ -348,7 +404,7 @@ export function MimiAssistantShell() {
     } catch {
       setPhase('idle');
       setErrorMsg(
-        'Mic is preview iframe mein block ho sakta hai — Chrome Site Settings mein Microphone allow karo, ya neeche type/tap karke Mimi ki cute voice suno!'
+        `Mic is preview iframe mein block ho sakta hai — Chrome Site Settings mein Microphone allow karo, ya neeche type/tap karke ${aiName} ki cute voice suno!`
       );
     }
   };
@@ -394,7 +450,7 @@ export function MimiAssistantShell() {
           if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
             setPhase('idle');
             setErrorMsg(
-              'Mic access preview iframe mein blocked hai — Chrome lock icon se Microphone allow karo ya standalone Android app/tab mein kholo. Tab tak type ya Quick Commands try karo!'
+              `Mic access preview iframe mein blocked hai — Chrome lock icon se Microphone allow karo ya standalone Android APK/tab mein kholo. Tab tak type ya Quick Commands try karo!`
             );
           } else {
             void startFallbackRecording();
@@ -415,10 +471,23 @@ export function MimiAssistantShell() {
     void startFallbackRecording();
   };
 
+  useEffect(() => {
+    handleToggleMicRef.current = handleToggleMic;
+  });
+
   const handleToggleSetting = (
     key: keyof Pick<
       PhoneState,
-      'wifi' | 'bluetooth' | 'flashlight' | 'dnd' | 'mobileData' | 'location' | 'autoRotate' | 'airplaneMode'
+      | 'wifi'
+      | 'bluetooth'
+      | 'flashlight'
+      | 'dnd'
+      | 'mobileData'
+      | 'location'
+      | 'autoRotate'
+      | 'airplaneMode'
+      | 'hotspot'
+      | 'batterySaver'
     >
   ) => {
     if (typeof navigator !== 'undefined' && navigator.vibrate) {
@@ -431,6 +500,7 @@ export function MimiAssistantShell() {
         next.wifi = false;
         next.mobileData = false;
         next.bluetooth = false;
+        next.hotspot = false;
       }
       return next;
     });
@@ -479,7 +549,7 @@ export function MimiAssistantShell() {
       {
         id: `mode-${Date.now()}`,
         role: 'assistant',
-        text: nextCfg.greetingText,
+        text: nextCfg.buildGreeting(aiName, userName),
       },
     ]);
   };
@@ -490,9 +560,17 @@ export function MimiAssistantShell() {
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-8 px-4 sm:px-6">
           <a
             href="#top"
-            className="text-lg font-bold tracking-tight text-stone-900 whitespace-nowrap shrink-0 dark:text-zinc-100"
+            className="flex items-center gap-2.5 text-lg font-bold tracking-tight text-stone-900 whitespace-nowrap shrink-0 dark:text-zinc-100"
           >
-            Mimi AI
+            <Image
+              src="/images/jassi-logo.jpg"
+              alt="Jassi AI logo"
+              width={30}
+              height={30}
+              className="rounded-lg border border-rose-500/40 object-cover"
+              referrerPolicy="no-referrer"
+            />
+            <span>{aiName} AI</span>
           </a>
 
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-stone-600 dark:text-zinc-400">
@@ -512,7 +590,7 @@ export function MimiAssistantShell() {
                   : 'hover:text-stone-900 dark:hover:text-zinc-100'
               }`}
             >
-              Phone Controls
+              A-to-Z Controls
             </button>
             <button
               type="button"
@@ -535,40 +613,97 @@ export function MimiAssistantShell() {
 
       <main id="top" className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:grid lg:grid-cols-12 lg:gap-8 lg:py-8">
         <section
-          aria-label="Mimi Voice Assistant"
+          aria-label={`${aiName} Voice Assistant`}
           className={`lg:col-span-5 ${mobileTab === 'assistant' ? 'block' : 'hidden lg:block'}`}
         >
           <div className="flex flex-col rounded-3xl border border-stone-200 bg-white p-5 shadow-xs dark:border-zinc-800 dark:bg-[#121216]">
-            <div className="flex items-start justify-between gap-3 border-b border-stone-100 pb-3 dark:border-zinc-800">
+            <div className="flex items-start justify-between gap-2 border-b border-stone-100 pb-3 dark:border-zinc-800">
               <div className="min-w-0">
                 <h1 className="text-lg font-bold tracking-tight text-stone-900 dark:text-zinc-100">
-                  Mimi Voice Companion
+                  {aiName} · Companion for {userName}
                 </h1>
                 <p className="truncate text-xs text-stone-500 dark:text-zinc-400">
                   {activePersonaConfig.tagline}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={handleToggleBlackMode}
-                aria-label={blackMode ? 'Switch to Light Mode' : 'Switch to Black Mode'}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs font-semibold text-stone-700 transition-colors hover:bg-stone-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
-              >
-                {blackMode ? (
-                  <>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setShowCustomNamePanel((v) => !v)}
+                  aria-label="Customize AI & User Name"
+                  className={`inline-flex items-center gap-1 rounded-xl border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                    showCustomNamePanel
+                      ? 'border-rose-500 bg-rose-600 text-white'
+                      : 'border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <UserCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>{userName}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleToggleBlackMode}
+                  aria-label={blackMode ? 'Switch to Light Mode' : 'Switch to Black Mode'}
+                  className="inline-flex items-center gap-1 rounded-xl border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-xs font-semibold text-stone-700 transition-colors hover:bg-stone-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                >
+                  {blackMode ? (
                     <Sun className="h-3.5 w-3.5 text-amber-400" aria-hidden="true" />
-                    <span>Light</span>
-                  </>
-                ) : (
-                  <>
+                  ) : (
                     <Moon className="h-3.5 w-3.5 text-stone-700" aria-hidden="true" />
-                    <span>Black</span>
-                  </>
-                )}
-              </button>
+                  )}
+                </button>
+              </div>
             </div>
 
-            <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1">
+            {showCustomNamePanel && (
+              <div className="mt-3 rounded-2xl border border-stone-200 bg-stone-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/90">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="mb-1 block text-[11px] font-semibold text-stone-600 dark:text-zinc-400">
+                      Call Me (Custom Name)
+                    </label>
+                    <input
+                      type="text"
+                      value={userName}
+                      onChange={(e) => updateUserName(e.target.value)}
+                      placeholder="Kunal"
+                      className="w-full rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-xs text-stone-900 focus:border-rose-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[11px] font-semibold text-stone-600 dark:text-zinc-400">
+                      AI Girl Name
+                    </label>
+                    <input
+                      type="text"
+                      value={aiName}
+                      onChange={(e) => updateAiName(e.target.value)}
+                      placeholder="Jassi"
+                      className="w-full rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-xs text-stone-900 focus:border-rose-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                    />
+                  </div>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] text-stone-500 dark:text-zinc-400">Presets:</span>
+                  {CALL_ME_PRESETS.map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => updateUserName(preset)}
+                      className={`rounded-lg px-2 py-1 text-[11px] font-medium ${
+                        userName === preset
+                          ? 'bg-rose-600 text-white'
+                          : 'bg-white text-stone-700 border border-stone-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-3 flex items-center gap-1.5 overflow-x-auto pb-1">
               {VOICE_PERSONAS.map((vp) => {
                 const active = persona === vp.id;
                 return (
@@ -586,11 +721,26 @@ export function MimiAssistantShell() {
                   </button>
                 );
               })}
+              <button
+                type="button"
+                onClick={() => setHandsFree((h) => !h)}
+                aria-pressed={handsFree}
+                className={`inline-flex items-center gap-1 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 min-h-[34px] ${
+                  handsFree
+                    ? 'border-emerald-500 bg-emerald-600 text-white'
+                    : 'border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                }`}
+              >
+                <Sparkles className="h-3 w-3" aria-hidden="true" />
+                <span>Hands-Free</span>
+              </button>
             </div>
 
             <VoiceOrb
               phase={phase}
               voiceMuted={voiceMuted}
+              aiName={aiName}
+              userName={userName}
               onToggleMic={handleToggleMic}
               onToggleMute={() => {
                 if (!voiceMuted) stopAudio();
@@ -640,7 +790,7 @@ export function MimiAssistantShell() {
                       <div className="mt-2 flex items-center gap-3">
                         <button
                           type="button"
-                          onClick={() => void speakWithMimiVoice(msg.text)}
+                          onClick={() => void speakWithJassiVoice(msg.text)}
                           className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 hover:underline dark:text-rose-400"
                         >
                           <Volume2 className="h-3 w-3" aria-hidden="true" />
@@ -690,8 +840,8 @@ export function MimiAssistantShell() {
                 type="text"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
-                placeholder="Bolo Mimi ko... (e.g. Wi-Fi off karo)"
-                aria-label="Type a voice or text command for Mimi"
+                placeholder={`Bolo ${aiName} ko, ${userName}... (e.g. Hotspot on karo)`}
+                aria-label={`Type a voice or text command for ${aiName}`}
                 className="min-h-[44px] flex-1 rounded-xl border border-stone-200 bg-stone-50 px-3.5 text-sm text-stone-900 placeholder:text-stone-400 focus:border-rose-400 focus:bg-white focus:outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-rose-500 dark:focus:bg-zinc-900"
               />
               <button
@@ -724,7 +874,7 @@ export function MimiAssistantShell() {
                 }`}
               >
                 <Sliders className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>Phone Control Center</span>
+                <span>A-to-Z Phone Control</span>
               </button>
               <button
                 type="button"
@@ -741,8 +891,8 @@ export function MimiAssistantShell() {
             </div>
             <p className="text-xs text-stone-500 dark:text-zinc-400">
               {desktopRightTab === 'controls'
-                ? 'Synced live with Mimi commands'
-                : 'Debug APK & GitHub Actions CI'}
+                ? `Synced live with ${aiName} commands`
+                : 'Debug APK & GitHub Releases CI'}
             </p>
           </div>
 
@@ -776,7 +926,7 @@ export function MimiAssistantShell() {
           }`}
         >
           <MessageCircle className="h-5 w-5" aria-hidden="true" />
-          <span>Assistant</span>
+          <span>{aiName}</span>
         </button>
 
         <button

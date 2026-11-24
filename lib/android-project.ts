@@ -12,7 +12,8 @@ export function buildAndroidProjectFiles(backendBaseUrl: string): AndroidProject
     {
       path: 'android/app/src/main/java/com/mimiai/assistant/MainActivity.kt',
       language: 'kotlin',
-      description: 'Jetpack Compose UI with Black Mode, All-in-One Girl Voice Modes (Jaan/Friendly/Flirty), ON_RESUME permission refresh, and Direct & GitHub Debug console.',
+      description:
+        'Jetpack Compose UI for Jassi AI with animated portrait & 7-bar talking equalizer, custom Call-Me name (default Kunal, no Boss), 6 voice modes, Hands-Free loop, Black Mode, and A-to-Z permission dashboard.',
       content: `package com.mimiai.assistant
 
 import android.Manifest
@@ -21,6 +22,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.MediaPlayer
 import android.os.Bundle
 import android.provider.Settings
@@ -31,16 +33,28 @@ import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -72,7 +86,7 @@ class MainActivity : ComponentActivity() {
         "jaan" to "Jaan",
         "friendly" to "Friendly",
         "flirty" to "Flirty",
-        "bubbly" to "Bubbly",
+        "smart_pro" to "Smart Pro",
         "calm" to "Soft"
     )
 
@@ -80,34 +94,54 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        controller = PhoneController(this)
+    private fun requestAllRuntimePermissions() {
         permissionLauncher.launch(
             arrayOf(
                 Manifest.permission.RECORD_AUDIO,
                 Manifest.permission.CALL_PHONE,
+                Manifest.permission.READ_CONTACTS,
+                Manifest.permission.SEND_SMS,
                 Manifest.permission.CAMERA
             )
         )
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        controller = PhoneController(this)
+        val prefs = getSharedPreferences("jassi_prefs", Context.MODE_PRIVATE)
+        requestAllRuntimePermissions()
 
         setContent {
             val scope = rememberCoroutineScope()
             val lifecycleOwner = LocalLifecycleOwner.current
 
             var baseUrl by remember { mutableStateOf(defaultBaseUrl) }
+            var userName by remember { mutableStateOf(prefs.getString("user_name", "Kunal") ?: "Kunal") }
+            var aiName by remember { mutableStateOf(prefs.getString("ai_name", "Jassi") ?: "Jassi") }
             var commandInput by remember { mutableStateOf("") }
             var selectedPersona by remember { mutableStateOf("all_in_one") }
-            var status by remember { mutableStateOf("All-in-One Girl Voice · Hinglish & Hindi") }
-            var reply by remember { mutableStateOf("Hii Jaan! Main Mimi hoon — All-in-One mode mein. Bolo kya karoon?") }
-            var debugLog by remember { mutableStateOf("Ready for GitHub & ADB Debug") }
+            var status by remember { mutableStateOf("Tap \$aiName to speak · \$userName") }
+            var reply by remember {
+                mutableStateOf("Hii \$userName! Main \$aiName hoon — All-in-One mode mein. Bolo aaj kya karoon?")
+            }
+            var debugLog by remember { mutableStateOf("Ready for A-to-Z Phone Control & Debug") }
             var listening by remember { mutableStateOf(false) }
+            var speaking by remember { mutableStateOf(false) }
             var busy by remember { mutableStateOf(false) }
+            var handsFree by remember { mutableStateOf(false) }
             var showDebugPanel by remember { mutableStateOf(true) }
+            var showCustomPanel by remember { mutableStateOf(false) }
             var blackMode by remember { mutableStateOf(true) }
 
             var accessibilityEnabled by remember { mutableStateOf(MimiAccessibilityService.instance != null) }
             var writeSettingsGranted by remember { mutableStateOf(Settings.System.canWrite(this@MainActivity)) }
+            var overlayGranted by remember { mutableStateOf(Settings.canDrawOverlays(this@MainActivity)) }
+            var contactsGranted by remember {
+                mutableStateOf(
+                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+                )
+            }
             var dndGranted by remember {
                 mutableStateOf(
                     (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
@@ -120,6 +154,11 @@ class MainActivity : ComponentActivity() {
                     if (event == Lifecycle.Event.ON_RESUME) {
                         accessibilityEnabled = MimiAccessibilityService.instance != null
                         writeSettingsGranted = Settings.System.canWrite(this@MainActivity)
+                        overlayGranted = Settings.canDrawOverlays(this@MainActivity)
+                        contactsGranted = ContextCompat.checkSelfPermission(
+                            this@MainActivity,
+                            Manifest.permission.READ_CONTACTS
+                        ) == PackageManager.PERMISSION_GRANTED
                         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                         dndGranted = nm.isNotificationPolicyAccessGranted
                     }
@@ -127,6 +166,62 @@ class MainActivity : ComponentActivity() {
                 lifecycleOwner.lifecycle.addObserver(observer)
                 onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
             }
+
+            val triggerVoiceLoop: () -> Unit = {
+                if (!listening && !busy) {
+                    listening = true
+                    status = "Sun rahi hoon \$userName..."
+                    startVoiceInput { spokenText ->
+                        listening = false
+                        if (spokenText.isBlank()) {
+                            status = "Tap \$aiName to speak"
+                            return@startVoiceInput
+                        }
+                        status = "\$userName: \$spokenText"
+                        busy = true
+                        scope.launch {
+                            val res = askJassiAndSpeak(
+                                serverUrl = baseUrl,
+                                command = spokenText,
+                                persona = selectedPersona,
+                                aiName = aiName.ifBlank { "Jassi" },
+                                userName = userName.ifBlank { "Kunal" },
+                                onSpeakingChange = { active ->
+                                    speaking = active
+                                    if (!active && handsFree) {
+                                        listening = true
+                                        status = "Sun rahi hoon \$userName..."
+                                    }
+                                }
+                            )
+                            reply = res.first
+                            debugLog = res.second
+                            status = "Ready"
+                            busy = false
+                        }
+                    }
+                }
+            }
+
+            val infiniteTransition = rememberInfiniteTransition(label = "jassi_orb")
+            val pulseScale by infiniteTransition.animateFloat(
+                initialValue = 1f,
+                targetValue = if (speaking) 1.08f else if (listening) 1.05f else 1.02f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(if (speaking) 480 else 1400, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "orb_scale"
+            )
+            val barPulse by infiniteTransition.animateFloat(
+                initialValue = 0.25f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(if (speaking) 360 else 800, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "wave_bar"
+            )
 
             val coral = Color(0xFFE11D48)
             val colorScheme = if (blackMode) {
@@ -154,7 +249,8 @@ class MainActivity : ComponentActivity() {
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState())
                             .padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -162,7 +258,10 @@ class MainActivity : ComponentActivity() {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Mimi AI", style = MaterialTheme.typography.headlineSmall)
+                                Text(
+                                    text = "\$aiName AI",
+                                    style = MaterialTheme.typography.headlineSmall
+                                )
                                 Text(
                                     text = status,
                                     style = MaterialTheme.typography.bodySmall,
@@ -170,12 +269,113 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                TextButton(onClick = { showCustomPanel = !showCustomPanel }) {
+                                    Text(userName)
+                                }
                                 TextButton(onClick = { blackMode = !blackMode }) {
                                     Text(if (blackMode) "Light" else "Black")
                                 }
                                 TextButton(onClick = { showDebugPanel = !showDebugPanel }) {
-                                    Text(if (showDebugPanel) "Hide Debug" else "Debug")
+                                    Text(if (showDebugPanel) "Hide" else "A-Z")
                                 }
+                            }
+                        }
+
+                        if (showCustomPanel) {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (blackMode) Color(0xFF141418) else Color(0xFFF5F2F0)
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text("Custom Name Calling (No Boss)", style = MaterialTheme.typography.titleSmall)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedTextField(
+                                            value = userName,
+                                            onValueChange = {
+                                                userName = it
+                                                prefs.edit().putString("user_name", it.ifBlank { "Kunal" }).apply()
+                                            },
+                                            label = { Text("Call Me") },
+                                            singleLine = true,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        OutlinedTextField(
+                                            value = aiName,
+                                            onValueChange = {
+                                                aiName = it
+                                                prefs.edit().putString("ai_name", it.ifBlank { "Jassi" }).apply()
+                                            },
+                                            label = { Text("AI Name") },
+                                            singleLine = true,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .padding(vertical = 4.dp)
+                                .size(164.dp)
+                                .scale(pulseScale)
+                                .clip(CircleShape)
+                                .border(
+                                    width = if (speaking || listening) 3.dp else 2.dp,
+                                    color = if (speaking || listening) Color(0xFFF43F5E) else Color(0xFF3F3F46),
+                                    shape = CircleShape
+                                )
+                                .clickable {
+                                    if (listening) {
+                                        speechRecognizer?.stopListening()
+                                        listening = false
+                                    } else {
+                                        triggerVoiceLoop()
+                                    }
+                                }
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.jassi_avatar),
+                                contentDescription = "\$aiName companion portrait",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            val heights = listOf(10f, 22f, 16f, 26f, 18f, 22f, 12f)
+                            heights.forEachIndexed { idx, base ->
+                                val barH = if (speaking) {
+                                    val phase = ((barPulse + idx * 0.17f) % 1f)
+                                    6.dp + ((base * phase).dp)
+                                } else if (listening) {
+                                    6.dp + ((base * 0.5f * barPulse).dp)
+                                } else {
+                                    5.dp
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .width(4.dp)
+                                        .height(barH)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(
+                                            if (speaking || listening) Color(0xFFF43F5E)
+                                            else Color(0xFF52525B)
+                                        )
+                                )
                             }
                         }
 
@@ -190,12 +390,12 @@ class MainActivity : ComponentActivity() {
                                 val onSelect: () -> Unit = {
                                     selectedPersona = id
                                     reply = when (id) {
-                                        "jaan" -> "Hii meri Jaan! Main hamesha aapke saath hoon. Bolo kya karoon?"
-                                        "friendly" -> "Heyy bestie! Chill karo, bolo phone mein kya set karna hai?"
-                                        "flirty" -> "Hii handsome! Aaj bade pyaar se yaad kiya? Bolo kya command hai!"
-                                        "bubbly" -> "Hii! Main Mimi hoon — bolo aaj kya karna hai?"
-                                        "calm" -> "Hello... aaram se bolo, main pyaar se kar doongi."
-                                        else -> "Hii Jaan! All-in-One mode ready hai — Friendly, Flirty ya Phone Control, bolo!"
+                                        "jaan" -> "Hii meri Jaan \$userName! Main hamesha aapke saath hoon. Bolo kya karoon?"
+                                        "friendly" -> "Heyy \$userName! Chill karo bestie, bolo phone mein kya set karna hai?"
+                                        "flirty" -> "Hii \$userName! Aaj bade pyaar se yaad kiya? Bolo kya command hai!"
+                                        "smart_pro" -> "Ready hoon \$userName! Smart Pro active — apps, calls ya web, bolo!"
+                                        "calm" -> "Hello \$userName... aaram se bolo, \$aiName pyaar se kar degi."
+                                        else -> "Hii \$userName! All-in-One mode ready hai — Friendly, Flirty ya Phone Control, bolo!"
                                     }
                                 }
                                 if (isSelected) {
@@ -232,7 +432,7 @@ class MainActivity : ComponentActivity() {
                             OutlinedTextField(
                                 value = commandInput,
                                 onValueChange = { commandInput = it },
-                                placeholder = { Text("Type command (e.g. Flashlight on karo)") },
+                                placeholder = { Text("Bolo \$aiName ko, \$userName...") },
                                 singleLine = true,
                                 modifier = Modifier.weight(1f)
                             )
@@ -242,9 +442,16 @@ class MainActivity : ComponentActivity() {
                                     if (cmd.isNotEmpty() && !busy) {
                                         commandInput = ""
                                         busy = true
-                                        status = "You: \$cmd"
+                                        status = "\$userName: \$cmd"
                                         scope.launch {
-                                            val res = askMimiAndSpeak(baseUrl, cmd, selectedPersona)
+                                            val res = askJassiAndSpeak(
+                                                serverUrl = baseUrl,
+                                                command = cmd,
+                                                persona = selectedPersona,
+                                                aiName = aiName.ifBlank { "Jassi" },
+                                                userName = userName.ifBlank { "Kunal" },
+                                                onSpeakingChange = { active -> speaking = active }
+                                            )
                                             reply = res.first
                                             debugLog = res.second
                                             status = "Done"
@@ -259,41 +466,36 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        Button(
-                            onClick = {
-                                if (listening) {
-                                    speechRecognizer?.stopListening()
-                                    listening = false
-                                    return@Button
-                                }
-                                listening = true
-                                status = "Sun rahi hoon..."
-                                startVoiceInput { spokenText ->
-                                    listening = false
-                                    if (spokenText.isBlank()) {
-                                        status = "Could not hear clearly. Try again."
-                                        return@startVoiceInput
-                                    }
-                                    status = "You: \$spokenText"
-                                    busy = true
-                                    scope.launch {
-                                        val res = askMimiAndSpeak(baseUrl, spokenText, selectedPersona)
-                                        reply = res.first
-                                        debugLog = res.second
-                                        status = "Ready"
-                                        busy = false
-                                    }
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth().height(54.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(
-                                when {
-                                    listening -> "Listening... (Tap to stop)"
-                                    busy -> "Mimi is thinking..."
-                                    else -> "Speak to Mimi (Hinglish / Hindi)"
-                                }
-                            )
+                            Button(
+                                onClick = {
+                                    if (listening) {
+                                        speechRecognizer?.stopListening()
+                                        listening = false
+                                    } else {
+                                        triggerVoiceLoop()
+                                    }
+                                },
+                                modifier = Modifier.weight(1f).height(52.dp)
+                            ) {
+                                Text(
+                                    when {
+                                        listening -> "Listening..."
+                                        speaking -> "\$aiName Talking..."
+                                        busy -> "Thinking..."
+                                        else -> "Talk to \$aiName"
+                                    }
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = { handsFree = !handsFree },
+                                modifier = Modifier.height(52.dp)
+                            ) {
+                                Text(if (handsFree) "Loop ON" else "Loop OFF")
+                            }
                         }
 
                         Row(
@@ -304,27 +506,28 @@ class MainActivity : ComponentActivity() {
                                 onClick = {
                                     scope.launch {
                                         busy = true
-                                        val res = askMimiAndSpeak(baseUrl, "Flashlight on karo", selectedPersona)
+                                        val res = askJassiAndSpeak(
+                                            baseUrl, "Flashlight on karo", selectedPersona, aiName, userName
+                                        ) { speaking = it }
                                         reply = res.first
                                         debugLog = res.second
                                         busy = false
                                     }
                                 },
                                 modifier = Modifier.weight(1f)
-                            ) { Text("Torch ON") }
+                            ) { Text("Torch") }
+
+                            OutlinedButton(
+                                onClick = { controller.launchCamera("selfie") },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("Selfie") }
 
                             OutlinedButton(
                                 onClick = {
-                                    scope.launch {
-                                        busy = true
-                                        val res = askMimiAndSpeak(baseUrl, "Brightness 40% kar do", selectedPersona)
-                                        reply = res.first
-                                        debugLog = res.second
-                                        busy = false
-                                    }
+                                    MimiAccessibilityService.instance?.executeNavigationGesture("screenshot")
                                 },
                                 modifier = Modifier.weight(1f)
-                            ) { Text("Bright 40%") }
+                            ) { Text("Shot") }
                         }
 
                         if (showDebugPanel) {
@@ -339,13 +542,15 @@ class MainActivity : ComponentActivity() {
                                     verticalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
                                     Text(
-                                        "Direct & GitHub Debug Console",
+                                        "A-to-Z Phone Access & Debug Console",
                                         style = MaterialTheme.typography.titleSmall
                                     )
                                     Text(
-                                        "Mode: \$selectedPersona · A11y: \${if (accessibilityEnabled) "Connected" else "Off"} · " +
-                                            "Write: \${if (writeSettingsGranted) "Granted" else "Off"} · " +
-                                            "DND: \${if (dndGranted) "Granted" else "Off"}",
+                                        "A11y: \${if (accessibilityEnabled) "ON" else "OFF"} · " +
+                                            "Contacts: \${if (contactsGranted) "ON" else "OFF"} · " +
+                                            "Write: \${if (writeSettingsGranted) "ON" else "OFF"} · " +
+                                            "DND: \${if (dndGranted) "ON" else "OFF"} · " +
+                                            "Overlay: \${if (overlayGranted) "ON" else "OFF"}",
                                         style = MaterialTheme.typography.bodySmall
                                     )
                                     Text(
@@ -366,25 +571,14 @@ class MainActivity : ComponentActivity() {
                                     ) {
                                         OutlinedButton(
                                             onClick = {
-                                                scope.launch {
-                                                    debugLog = pingBackend(baseUrl)
-                                                }
+                                                scope.launch { debugLog = pingBackend(baseUrl) }
                                             },
                                             modifier = Modifier.weight(1f)
                                         ) { Text("Ping Server") }
                                         OutlinedButton(
-                                            onClick = {
-                                                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                                cm.setPrimaryClip(
-                                                    ClipData.newPlainText(
-                                                        "MimiDebugLog",
-                                                        "URL=\$baseUrl\\nMode=\$selectedPersona\\nA11y=\$accessibilityEnabled\\nWrite=\$writeSettingsGranted\\nDND=\$dndGranted\\nLog=\$debugLog"
-                                                    )
-                                                )
-                                                status = "Debug log copied"
-                                            },
+                                            onClick = { requestAllRuntimePermissions() },
                                             modifier = Modifier.weight(1f)
-                                        ) { Text("Copy Log") }
+                                        ) { Text("Grant Basic") }
                                     }
                                     OutlinedButton(
                                         onClick = {
@@ -392,7 +586,7 @@ class MainActivity : ComponentActivity() {
                                         },
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        Text("1. Enable Accessibility Service")
+                                        Text("1. Enable A-to-Z Accessibility Service")
                                     }
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -401,12 +595,29 @@ class MainActivity : ComponentActivity() {
                                         OutlinedButton(
                                             onClick = { controller.openWriteSettings() },
                                             modifier = Modifier.weight(1f)
-                                        ) { Text("2. Brightness Perm") }
+                                        ) { Text("2. Brightness") }
                                         OutlinedButton(
                                             onClick = { controller.openDndSettings() },
                                             modifier = Modifier.weight(1f)
-                                        ) { Text("3. Silent / DND Perm") }
+                                        ) { Text("3. Silent/DND") }
+                                        OutlinedButton(
+                                            onClick = { controller.openOverlaySettings() },
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("4. Overlay") }
                                     }
+                                    OutlinedButton(
+                                        onClick = {
+                                            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                            cm.setPrimaryClip(
+                                                ClipData.newPlainText(
+                                                    "JassiDebugLog",
+                                                    "AI=\$aiName User=\$userName Mode=\$selectedPersona\\nA11y=\$accessibilityEnabled Contacts=\$contactsGranted Write=\$writeSettingsGranted DND=\$dndGranted Overlay=\$overlayGranted\\nLog=\$debugLog"
+                                                )
+                                            )
+                                            status = "Debug log copied"
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) { Text("Copy Full A-to-Z Debug Log") }
                                 }
                             }
                         }
@@ -454,10 +665,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private suspend fun askMimiAndSpeak(
+    private suspend fun askJassiAndSpeak(
         serverUrl: String,
         command: String,
-        persona: String
+        persona: String,
+        aiName: String,
+        userName: String,
+        onSpeakingChange: (Boolean) -> Unit
     ): Pair<String, String> = withContext(Dispatchers.IO) {
         val started = System.currentTimeMillis()
         val cleanBase = serverUrl.trim().removeSuffix("/")
@@ -465,6 +679,8 @@ class MainActivity : ComponentActivity() {
         val payload = JSONObject()
             .put("message", command)
             .put("persona", persona)
+            .put("aiName", aiName)
+            .put("userName", userName)
             .toString()
         val req = Request.Builder()
             .url("\$cleanBase/api/assistant")
@@ -478,7 +694,7 @@ class MainActivity : ComponentActivity() {
                 it.body?.string()
             }
         }.getOrNull() ?: return@withContext Pair(
-            "Server se connect nahi ho paya. URL check karo.",
+            "Server se connect nahi ho paya \$userName. URL check karo.",
             "POST /api/assistant -> Network failure"
         )
 
@@ -493,7 +709,7 @@ class MainActivity : ComponentActivity() {
             return@withContext Pair(errMsg, "HTTP \$statusCode -> \$errMsg")
         }
 
-        val replyText = json.optString("replyText", "Done!")
+        val replyText = json.optString("replyText", "Done \$userName!")
         val actionCount = json.optJSONArray("actions")?.length() ?: 0
 
         withContext(Dispatchers.Main) {
@@ -518,12 +734,15 @@ class MainActivity : ComponentActivity() {
                 .getOrDefault("")
             if (audioBase64.isNotEmpty()) {
                 val wavBytes = Base64.decode(audioBase64, Base64.DEFAULT)
-                val tempWav = File(cacheDir, "mimi_reply.wav")
+                val tempWav = File(cacheDir, "jassi_reply.wav")
                 tempWav.writeBytes(wavBytes)
                 withContext(Dispatchers.Main) {
+                    onSpeakingChange(true)
                     mediaPlayer?.release()
                     mediaPlayer = MediaPlayer().apply {
                         setDataSource(tempWav.absolutePath)
+                        setOnCompletionListener { onSpeakingChange(false) }
+                        setOnErrorListener { _, _, _ -> onSpeakingChange(false); true }
                         prepare()
                         start()
                     }
@@ -531,7 +750,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         val elapsed = System.currentTimeMillis() - started
-        Pair(replyText, "HTTP \$statusCode · mode=\$persona · \${actionCount} action(s) · \${elapsed}ms")
+        Pair(replyText, "HTTP \$statusCode · \$aiName->\$userName · mode=\$persona · \${actionCount} action(s) · \${elapsed}ms")
     }
 
     override fun onDestroy() {
@@ -545,7 +764,8 @@ class MainActivity : ComponentActivity() {
     {
       path: 'android/app/src/main/java/com/mimiai/assistant/PhoneController.kt',
       language: 'kotlin',
-      description: 'Executes Flashlight, Brightness, Volume, DND, Alarms, Calls, App Launches, and Accessibility gestures.',
+      description:
+        'A-to-Z Phone Controller: Contacts lookup, Calls, WhatsApp/SMS, Torch, Brightness, Volume, DND, Camera/Selfie/Video, Timers/Alarms, Media Keys, System Setting Panels, and Accessibility gestures.',
       content: `package com.mimiai.assistant
 
 import android.Manifest
@@ -557,8 +777,12 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.AudioManager
 import android.net.Uri
+import android.os.Build
 import android.provider.AlarmClock
+import android.provider.ContactsContract
+import android.provider.MediaStore
 import android.provider.Settings
+import android.view.KeyEvent
 import androidx.core.content.ContextCompat
 import org.json.JSONArray
 import org.json.JSONObject
@@ -569,8 +793,8 @@ class PhoneController(private val context: Context) {
         runCatching {
             val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
             val cameraId = cameraManager.cameraIdList.firstOrNull { id ->
-                cameraManager.getCameraCharacteristics(id)
-                    .get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+                val chars = cameraManager.getCameraCharacteristics(id)
+                chars.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
             } ?: cameraManager.cameraIdList.firstOrNull() ?: return
             cameraManager.setTorchMode(cameraId, enabled)
         }
@@ -592,36 +816,117 @@ class PhoneController(private val context: Context) {
         }
         runCatching {
             val value = ((percent.coerceIn(5, 100) / 100f) * 255).toInt()
-            Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
+            Settings.System.putInt(
+                context.contentResolver,
+                Settings.System.SCREEN_BRIGHTNESS_MODE,
+                Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+            )
             Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, value)
         }
     }
 
     fun setDnd(enabled: Boolean) {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (!nm.isNotificationPolicyAccessGranted) return
+        if (!nm.isNotificationPolicyAccessGranted) {
+            return
+        }
         runCatching {
-            nm.setInterruptionFilter(if (enabled) NotificationManager.INTERRUPTION_FILTER_PRIORITY else NotificationManager.INTERRUPTION_FILTER_ALL)
+            nm.setInterruptionFilter(
+                if (enabled) NotificationManager.INTERRUPTION_FILTER_PRIORITY
+                else NotificationManager.INTERRUPTION_FILTER_ALL
+            )
         }
     }
 
     fun openWriteSettings() {
         runCatching {
-            context.startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:\${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
+                data = Uri.parse("package:\${context.packageName}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
         }
     }
 
     fun openDndSettings() {
         runCatching {
-            context.startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        }
+    }
+
+    fun openOverlaySettings() {
+        runCatching {
+            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                data = Uri.parse("package:\${context.packageName}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        }
+    }
+
+    fun openSystemSettingPanel(settingKey: String) {
+        runCatching {
+            val intent = when (settingKey.lowercase()) {
+                "wifi", "mobiledata" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY)
+                } else {
+                    Intent(Settings.ACTION_WIFI_SETTINGS)
+                }
+                "bluetooth" -> Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
+                "location" -> Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                "hotspot" -> Intent(Settings.ACTION_WIRELESS_SETTINGS)
+                "batterysaver" -> Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS)
+                "airplanemode" -> Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS)
+                else -> Intent(Settings.ACTION_SETTINGS)
+            }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
         }
     }
 
     fun openUri(uriString: String) {
         if (uriString.isBlank()) return
         runCatching {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uriString)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uriString)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
         }
+    }
+
+    fun resolvePhoneNumber(contactOrNumber: String): String {
+        val raw = contactOrNumber.removePrefix("tel:").trim()
+        val digitsOnly = raw.replace(Regex("[^+\\\\d]"), "")
+        if (digitsOnly.length >= 6 && raw.any { it.isDigit() }) {
+            return digitsOnly
+        }
+        val hasContacts = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.READ_CONTACTS
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!hasContacts || raw.isBlank()) return raw
+
+        return runCatching {
+            val cursor = context.contentResolver.query(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                arrayOf(
+                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                    ContactsContract.CommonDataKinds.Phone.NUMBER
+                ),
+                "\${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?",
+                arrayOf("%\$raw%"),
+                null
+            )
+            cursor?.use { c ->
+                if (c.moveToFirst()) {
+                    val number = c.getString(1) ?: raw
+                    return@runCatching number.replace(Regex("[^+\\\\d]"), "")
+                }
+            }
+            raw
+        }.getOrDefault(raw)
     }
 
     fun openApp(appName: String, launchUri: String? = null) {
@@ -631,23 +936,70 @@ class PhoneController(private val context: Context) {
             "instagram" to "com.instagram.android",
             "spotify" to "com.spotify.music",
             "maps" to "com.google.android.apps.maps",
-            "chrome" to "com.android.chrome"
+            "chrome" to "com.android.chrome",
+            "gmail" to "com.google.android.gm",
+            "telegram" to "org.telegram.messenger",
+            "snapchat" to "com.snapchat.android",
+            "calculator" to "com.google.android.calculator",
+            "calendar" to "com.google.android.calendar",
+            "clock" to "com.google.android.deskclock",
+            "gallery" to "com.google.android.apps.photos",
+            "photos" to "com.google.android.apps.photos",
+            "playstore" to "com.android.vending",
+            "play store" to "com.android.vending",
+            "files" to "com.google.android.apps.nbu.files",
+            "camera" to "com.android.camera2"
         )
-        val pkg = packageMap[appName.lowercase().trim()]
-        val launch = pkg?.let { context.packageManager.getLaunchIntentForPackage(it) }
-        if (launch != null) {
-            context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        } else if (!launchUri.isNullOrBlank()) {
+        val normalized = appName.lowercase().trim()
+        if (normalized == "settings") {
+            openSystemSettingPanel("settings")
+            return
+        }
+        if (normalized == "camera") {
+            launchCamera("photo")
+            return
+        }
+        val pkg = packageMap[normalized]
+        if (pkg != null) {
+            val launch = context.packageManager.getLaunchIntentForPackage(pkg)
+            if (launch != null) {
+                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(launch)
+                return
+            }
+        }
+        if (!launchUri.isNullOrBlank()) {
             openUri(launchUri)
         }
     }
 
-    fun dialCall(phoneOrUri: String) {
-        val uriString = if (phoneOrUri.startsWith("tel:")) phoneOrUri else "tel:\$phoneOrUri"
-        val hasPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
-        val action = if (hasPerm) Intent.ACTION_CALL else Intent.ACTION_DIAL
+    fun launchCamera(mode: String) {
         runCatching {
-            context.startActivity(Intent(action, Uri.parse(uriString)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            val action = if (mode.lowercase() == "video") {
+                MediaStore.ACTION_VIDEO_CAPTURE
+            } else {
+                MediaStore.ACTION_IMAGE_CAPTURE
+            }
+            val intent = Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (mode.lowercase() == "selfie") {
+                intent.putExtra("android.intent.extras.CAMERA_FACING", 1)
+                intent.putExtra("android.intent.extra.USE_FRONT_CAMERA", true)
+            }
+            context.startActivity(intent)
+        }
+    }
+
+    fun dialCall(phoneOrName: String) {
+        val resolved = resolvePhoneNumber(phoneOrName)
+        val uriString = if (resolved.startsWith("tel:")) resolved else "tel:\$resolved"
+        val hasCallPermission = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.CALL_PHONE
+        ) == PackageManager.PERMISSION_GRANTED
+        val action = if (hasCallPermission) Intent.ACTION_CALL else Intent.ACTION_DIAL
+        runCatching {
+            val intent = Intent(action, Uri.parse(uriString)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
         }
     }
 
@@ -664,36 +1016,121 @@ class PhoneController(private val context: Context) {
         }
     }
 
+    fun setTimer(seconds: Int, label: String) {
+        runCatching {
+            val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
+                putExtra(AlarmClock.EXTRA_LENGTH, seconds.coerceAtLeast(1))
+                putExtra(AlarmClock.EXTRA_MESSAGE, label)
+                putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        }
+    }
+
+    fun controlMediaPlayback(summary: String) {
+        runCatching {
+            val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val keyCode = when {
+                summary.contains("Paused", ignoreCase = true) -> KeyEvent.KEYCODE_MEDIA_PAUSE
+                summary.contains("Playing", ignoreCase = true) -> KeyEvent.KEYCODE_MEDIA_PLAY
+                else -> KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+            }
+            audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
+            audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
+        }
+    }
+
     fun applyAssistantResponse(responseJson: JSONObject) {
         val stateJson = responseJson.optJSONObject("updatedPhoneState")
         val actions = responseJson.optJSONArray("actions") ?: JSONArray()
+
         for (i in 0 until actions.length()) {
             val act = actions.optJSONObject(i) ?: continue
             val tool = act.optString("tool")
             val summary = act.optString("summary")
             val launchUri = act.optString("launchUri")
+
             when (tool) {
-                "toggleSystemSetting" -> if (stateJson != null) {
-                    setFlashlight(stateJson.optBoolean("flashlight", false))
-                    setDnd(stateJson.optBoolean("dnd", false))
-                }
-                "adjustLevel" -> if (stateJson != null) {
-                    if (summary.contains("Brightness", ignoreCase = true)) setBrightnessPercent(stateJson.optInt("brightness", 68))
-                    else if (summary.contains("Volume", ignoreCase = true)) setVolumePercent(stateJson.optInt("volume", 60))
-                }
-                "openApp" -> openApp(stateJson?.optString("activeApp", "") ?: "", launchUri)
-                "makeCall" -> if (launchUri.isNotBlank()) dialCall(launchUri)
-                "sendMessage" -> if (launchUri.isNotBlank()) openUri(launchUri)
-                "setAlarmOrTimer" -> {
-                    val latest = stateJson?.optJSONArray("alarms")?.optJSONObject(0)
-                    if (latest != null) {
-                        val parts = latest.optString("time", "07:00").split(":")
-                        setAlarm(parts.getOrNull(0)?.toIntOrNull() ?: 7, parts.getOrNull(1)?.toIntOrNull() ?: 0, latest.optString("label", "Mimi"))
+                "toggleSystemSetting" -> {
+                    if (stateJson != null) {
+                        setFlashlight(stateJson.optBoolean("flashlight", false))
+                        setDnd(stateJson.optBoolean("dnd", false))
                     }
+                    listOf("wifi", "bluetooth", "mobileData", "hotspot", "location", "batterySaver", "airplaneMode")
+                        .firstOrNull { summary.contains(it, ignoreCase = true) }
+                        ?.let { openSystemSettingPanel(it) }
+                }
+                "adjustLevel" -> {
+                    if (stateJson != null) {
+                        if (summary.contains("Brightness", ignoreCase = true)) {
+                            setBrightnessPercent(stateJson.optInt("brightness", 68))
+                        } else if (summary.contains("Volume", ignoreCase = true)) {
+                            setVolumePercent(stateJson.optInt("volume", 60))
+                        }
+                    }
+                }
+                "openApp" -> {
+                    val appName = stateJson?.optString("activeApp", "") ?: ""
+                    openApp(appName, launchUri)
+                }
+                "makeCall" -> {
+                    val contact = stateJson?.optString("lastCall", "")?.takeIf { it.isNotBlank() } ?: launchUri
+                    if (contact.isNotBlank()) dialCall(contact)
+                }
+                "sendMessage" -> {
+                    val lastMsg = stateJson?.optJSONObject("lastMessage")
+                    val recipient = lastMsg?.optString("recipient", "") ?: ""
+                    val msgText = lastMsg?.optString("text", "") ?: ""
+                    val resolvedNumber = if (recipient.isNotBlank()) resolvePhoneNumber(recipient) else ""
+                    if (launchUri.startsWith("sms:") && resolvedNumber.any { it.isDigit() }) {
+                        openUri("sms:\$resolvedNumber?body=\${Uri.encode(msgText)}")
+                    } else if (launchUri.contains("wa.me") && resolvedNumber.any { it.isDigit() }) {
+                        openUri("https://wa.me/\$resolvedNumber?text=\${Uri.encode(msgText)}")
+                    } else if (launchUri.isNotBlank()) {
+                        openUri(launchUri)
+                    }
+                }
+                "setAlarmOrTimer" -> {
+                    if (summary.startsWith("Timer set:", ignoreCase = true)) {
+                        val secs = Regex("(\\\\d+)s").find(summary)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 60
+                        setTimer(secs, "Jassi Timer")
+                    } else {
+                        val alarms = stateJson?.optJSONArray("alarms")
+                        val latest = alarms?.optJSONObject(0)
+                        if (latest != null) {
+                            val timeParts = latest.optString("time", "07:00").split(":")
+                            val hour = timeParts.getOrNull(0)?.toIntOrNull() ?: 7
+                            val min = timeParts.getOrNull(1)?.toIntOrNull() ?: 0
+                            setAlarm(hour, min, latest.optString("label", "Jassi Reminder"))
+                        }
+                    }
+                }
+                "controlMedia" -> controlMediaPlayback(summary)
+                "searchWebOrMaps" -> if (launchUri.isNotBlank()) openUri(launchUri)
+                "takePhotoOrVideo" -> {
+                    val mode = when {
+                        summary.contains("selfie", ignoreCase = true) -> "selfie"
+                        summary.contains("video", ignoreCase = true) -> "video"
+                        else -> "photo"
+                    }
+                    launchCamera(mode)
                 }
                 "performScreenGesture" -> {
                     val gestureRaw = summary.removePrefix("Gesture: ").trim().replace(" ", "_")
-                    MimiAccessibilityService.instance?.executeNavigationGesture(gestureRaw)
+                    val tapMatch = Regex("^Tapped \\"(.+)\\"\$").find(summary)
+                    val typeMatch = Regex("^Typed \\"(.+)\\"\$").find(summary)
+                    when {
+                        tapMatch != null -> MimiAccessibilityService.instance?.executeNavigationGesture(
+                            "tap_text",
+                            tapMatch.groupValues[1]
+                        )
+                        typeMatch != null -> MimiAccessibilityService.instance?.executeNavigationGesture(
+                            "type_text",
+                            typeMatch.groupValues[1]
+                        )
+                        else -> MimiAccessibilityService.instance?.executeNavigationGesture(gestureRaw)
+                    }
                 }
             }
         }
@@ -704,25 +1141,37 @@ class PhoneController(private val context: Context) {
     {
       path: 'android/app/src/main/java/com/mimiai/assistant/MimiAccessibilityService.kt',
       language: 'kotlin',
-      description: 'OS-level Accessibility service for Home/Back/Recents, scrolling, and screen clicks.',
+      description: 'OS-level A-to-Z Accessibility service for Home/Back/Recents, Quick Settings, Split Screen, Screenshots, Lock Screen, Swipes, Tap & Voice Typing.',
       content: `package com.mimiai.assistant
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.os.Build
+import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 
 class MimiAccessibilityService : AccessibilityService() {
+
     companion object {
         var instance: MimiAccessibilityService? = null
             private set
     }
-    override fun onServiceConnected() { super.onServiceConnected(); instance = this }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        instance = this
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+
     override fun onInterrupt() {}
-    override fun onDestroy() { super.onDestroy(); if (instance === this) instance = null }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (instance === this) instance = null
+    }
 
     fun executeNavigationGesture(gesture: String, targetText: String? = null): Boolean {
         return when (gesture.lowercase().trim()) {
@@ -730,31 +1179,63 @@ class MimiAccessibilityService : AccessibilityService() {
             "back" -> performGlobalAction(GLOBAL_ACTION_BACK)
             "recents" -> performGlobalAction(GLOBAL_ACTION_RECENTS)
             "notifications" -> performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
-            "lock_screen" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN) else false
-            "screenshot" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT) else false
+            "quick_settings" -> performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)
+            "power_dialog" -> performGlobalAction(GLOBAL_ACTION_POWER_DIALOG)
+            "split_screen" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                performGlobalAction(GLOBAL_ACTION_TOGGLE_SPLIT_SCREEN)
+            } else {
+                false
+            }
+            "lock_screen" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
+            } else {
+                false
+            }
+            "screenshot" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT)
+            } else {
+                false
+            }
             "scroll_down" -> performSwipe(540f, 1500f, 540f, 500f)
             "scroll_up" -> performSwipe(540f, 500f, 540f, 1500f)
+            "swipe_left" -> performSwipe(920f, 1000f, 160f, 1000f)
+            "swipe_right" -> performSwipe(160f, 1000f, 920f, 1000f)
             "tap_text" -> if (!targetText.isNullOrBlank()) tapNodeByText(targetText) else false
+            "type_text" -> if (!targetText.isNullOrBlank()) typeIntoFocusedField(targetText) else false
             else -> false
         }
     }
 
     private fun performSwipe(x1: Float, y1: Float, x2: Float, y2: Float): Boolean {
-        val path = Path().apply { moveTo(x1, y1); lineTo(x2, y2) }
+        val path = Path().apply {
+            moveTo(x1, y1)
+            lineTo(x2, y2)
+        }
         val stroke = GestureDescription.StrokeDescription(path, 0L, 260L)
         return dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
     }
 
     private fun tapNodeByText(query: String): Boolean {
         val root = rootInActiveWindow ?: return false
-        for (node in root.findAccessibilityNodeInfosByText(query)) {
+        val matches = root.findAccessibilityNodeInfosByText(query)
+        for (node in matches) {
             var current: AccessibilityNodeInfo? = node
             while (current != null) {
-                if (current.isClickable) return current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                if (current.isClickable) {
+                    return current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                }
                 current = current.parent
             }
         }
         return false
+    }
+
+    private fun typeIntoFocusedField(text: String): Boolean {
+        val focused = findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return false
+        val args = Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        }
+        return focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
     }
 }
 `,
@@ -888,17 +1369,26 @@ zipStorePath=wrapper/dists
     {
       path: 'android/app/src/main/AndroidManifest.xml',
       language: 'xml',
-      description: 'Android 11+ <queries>, permissions, and AccessibilityService declaration.',
+      description: 'Android 11+ <queries>, A-to-Z permissions (Contacts, SMS, Overlay, Wi-Fi, Bluetooth), custom launcher icons, and AccessibilityService.',
       content: `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
@@ -911,13 +1401,27 @@ zipStorePath=wrapper/dists
             <data android:scheme="https" />
         </intent>
         <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
+        <intent>
             <action android:name="android.intent.action.DIAL" />
         </intent>
         <intent>
             <action android:name="android.intent.action.CALL" />
         </intent>
         <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="smsto" />
+        </intent>
+        <intent>
             <action android:name="android.intent.action.SET_ALARM" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SET_TIMER" />
+        </intent>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
         </intent>
         <package android:name="com.google.android.youtube" />
         <package android:name="com.whatsapp" />
@@ -925,10 +1429,15 @@ zipStorePath=wrapper/dists
         <package android:name="com.spotify.music" />
         <package android:name="com.google.android.apps.maps" />
         <package android:name="com.android.chrome" />
+        <package android:name="com.google.android.gm" />
+        <package android:name="org.telegram.messenger" />
+        <package android:name="com.snapchat.android" />
     </queries>
 
     <application
         android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.Material3.DayNight.NoActionBar">
@@ -975,11 +1484,11 @@ zipStorePath=wrapper/dists
     {
       path: 'android/app/src/main/res/values/strings.xml',
       language: 'xml',
-      description: 'String resources required by AndroidManifest and Accessibility config.',
+      description: 'Jassi AI string resources required by AndroidManifest and Accessibility config.',
       content: `<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Mimi AI</string>
-    <string name="mimi_accessibility_desc">Allows Mimi AI to perform voice-controlled navigation, screen gestures, and app actions across your phone.</string>
+    <string name="app_name">Jassi AI</string>
+    <string name="mimi_accessibility_desc">Allows Jassi AI to perform voice-controlled A-to-Z phone navigation, screen gestures, typing, screenshots, and app actions.</string>
 </resources>
 `,
     },
@@ -1001,7 +1510,7 @@ zipStorePath=wrapper/dists
     {
       path: '.github/workflows/android-debug-apk.yml',
       language: 'yaml',
-      description: 'GitHub Actions workflow: builds Debug APK, runs lintDebug, verifies APK integrity, uploads Artifacts, and publishes to GitHub Releases.',
+      description: 'GitHub Actions workflow: builds Jassi AI Debug APK, runs lintDebug, verifies APK integrity, uploads Artifacts, and publishes to GitHub Releases.',
       content: `name: Build & Release Android Debug APK
 
 on:
@@ -1066,23 +1575,23 @@ jobs:
       - name: Verify & Package Debug APK
         run: |
           APK_PATH="android/app/build/outputs/apk/debug/app-debug.apk"
-          RELEASE_APK="android/app/build/outputs/apk/debug/mimi-ai-debug.apk"
+          RELEASE_APK="android/app/build/outputs/apk/debug/jassi-ai-debug.apk"
           test -f "\$APK_PATH"
           unzip -tq "\$APK_PATH"
           cp "\$APK_PATH" "\$RELEASE_APK"
           APK_SIZE=\$(ls -lh "\$RELEASE_APK" | awk '{print \$5}')
           {
-            echo "## Mimi AI Debug APK Build & Release Verified"
+            echo "## Jassi AI Debug APK Build & Release Verified"
             echo "- **Package:** \\\`com.mimiai.assistant\\\`"
             echo "- **APK Size:** \\\`\$APK_SIZE\\\`"
-            echo "- **Release File:** \\\`mimi-ai-debug.apk\\\` (published to GitHub Releases & Actions Artifacts)"
+            echo "- **Release File:** \\\`jassi-ai-debug.apk\\\` (published to GitHub Releases & Actions Artifacts)"
           } >> "\$GITHUB_STEP_SUMMARY"
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mimi-ai-debug-apk
-          path: android/app/build/outputs/apk/debug/mimi-ai-debug.apk
+          name: jassi-ai-debug-apk
+          path: android/app/build/outputs/apk/debug/jassi-ai-debug.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -1090,7 +1599,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mimi-ai-debug-reports
+          name: jassi-ai-debug-reports
           path: |
             android/app/build/reports/
             android/build/reports/
@@ -1102,11 +1611,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.\${{ github.run_number }}
-          name: Mimi AI v1.0.\${{ github.run_number }} (Debug APK)
+          name: Jassi AI v1.0.\${{ github.run_number }} (Debug APK)
           body: |
-            Automatic Android Debug APK build for **Mimi AI** (Black Mode + All-in-One Girl Voice + Accessibility Phone Control).
-            Download **mimi-ai-debug.apk** below and install it on your Android phone.
-          files: android/app/build/outputs/apk/debug/mimi-ai-debug.apk
+            Automatic Android Debug APK build for **Jassi AI** (Glamorous Avatar & App Logo + Animated Talking Orb + Custom Name Calling + A-to-Z Phone Control + Black Mode).
+            Download **jassi-ai-debug.apk** below and install it on your Android phone.
+          files: android/app/build/outputs/apk/debug/jassi-ai-debug.apk
           make_latest: true
         env:
           GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
@@ -1115,13 +1624,13 @@ jobs:
     {
       path: 'README.md',
       language: 'markdown',
-      description: 'Instructions for Direct ADB Debugging, Black Mode, and GitHub Actions APK install.',
-      content: `# Mimi AI — Android App Setup
+      description: 'Instructions for Direct ADB Debugging, Jassi AI A-to-Z Permissions, and GitHub Releases APK install.',
+      content: `# Jassi AI — Android App Setup
 
-## Option 1: Install from GitHub Actions
-1. Push this folder to a GitHub repository.
-2. Open the **Actions** tab on GitHub and click **Build Android Debug APK**.
-3. Download **mimi-ai-debug-apk** (APK) or **mimi-ai-debug-reports** (Lint/Debug logs) and install \`app-debug.apk\` on your Android phone.
+## Option 1: Install from GitHub Releases
+1. Push this repository to GitHub.
+2. Open **Releases** (or **Actions -> Build & Release Android Debug APK**).
+3. Download **jassi-ai-debug.apk** and install it on your Android phone.
 
 ## Option 2: Direct Debugging (USB / Wireless ADB)
 1. Enable **Developer Options -> USB Debugging** on your Android phone.
@@ -1130,7 +1639,7 @@ jobs:
    gradle assembleDebug
    adb install -r app/build/outputs/apk/debug/app-debug.apk
    \`\`\`
-3. Pointing to live Mimi server: **${cleanUrl}**
+3. Pointing to live Jassi AI server: **${cleanUrl}**
 `,
     },
   ];

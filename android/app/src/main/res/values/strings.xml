@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Mimi AI</string>
-    <string name="mimi_accessibility_desc">Allows Mimi AI to perform voice-controlled navigation, screen gestures, and app actions across your phone.</string>
+    <string name="app_name">Jassi AI</string>
+    <string name="mimi_accessibility_desc">Allows Jassi AI to perform voice-controlled A-to-Z phone navigation, screen gestures, typing, screenshots, and app actions.</string>
 </resources>

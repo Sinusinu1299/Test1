@@ -3,14 +3,14 @@ import type { MetadataRoute } from 'next';
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: '/',
-    name: 'Mimi AI',
-    short_name: 'Mimi AI',
+    name: 'Jassi AI',
+    short_name: 'Jassi AI',
     description:
-      'Your personal cute-voice AI phone assistant with full device command orchestration, Hinglish voice recognition, and Android companion export.',
+      'Your personal glamorous-voice AI phone companion (Jassi) with A-to-Z phone control, custom name calling, Hinglish voice recognition, and Android companion export.',
     start_url: '/',
     scope: '/',
     display: 'standalone',
-    background_color: '#FAF8F7',
+    background_color: '#09090B',
     theme_color: '#E11D48',
     icons: [
       {

@@ -32,7 +32,7 @@ export function PWAInstallButton({ onOpenAndroidTab }: PWAInstallButtonProps) {
         className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-rose-700 active:scale-[0.98] whitespace-nowrap shrink-0 min-h-[40px]"
       >
         <Download className="h-3.5 w-3.5" aria-hidden="true" />
-        <span>{isInstallable ? 'Install App' : isIOS ? 'Install on iOS' : 'Get Android App'}</span>
+        <span>{isInstallable ? 'Install Jassi' : isIOS ? 'Install on iOS' : 'Get Android App'}</span>
       </button>
 
       {showGuide && (
@@ -50,7 +50,7 @@ export function PWAInstallButton({ onOpenAndroidTab }: PWAInstallButtonProps) {
                 </div>
                 <div>
                   <h3 id="install-guide-title" className="text-base font-bold text-stone-900 dark:text-zinc-100">
-                    Install Mimi on Your Phone
+                    Install Jassi AI on Your Phone
                   </h3>
                   <p className="text-xs text-stone-500 dark:text-zinc-400">
                     {isIOS ? 'iPhone & iPad Safari' : 'Android Chrome & GitHub APK'}
@@ -71,7 +71,7 @@ export function PWAInstallButton({ onOpenAndroidTab }: PWAInstallButtonProps) {
               <ol className="mt-4 space-y-2.5 text-sm text-stone-700 dark:text-zinc-300">
                 <li>1. Tap the <strong>Share</strong> icon in the Safari toolbar.</li>
                 <li>2. Scroll down and tap <strong>Add to Home Screen</strong>.</li>
-                <li>3. Tap <strong>Add</strong> to launch Mimi as a standalone app.</li>
+                <li>3. Tap <strong>Add</strong> to launch Jassi AI as a standalone app.</li>
               </ol>
             ) : (
               <div className="mt-4 space-y-3 text-sm text-stone-700 dark:text-zinc-300">
@@ -79,7 +79,7 @@ export function PWAInstallButton({ onOpenAndroidTab }: PWAInstallButtonProps) {
                   <strong>Instant Home-Screen App:</strong> Open this URL in Android Chrome, tap the menu (three dots), and choose <strong>Install app</strong>.
                 </p>
                 <p>
-                  <strong>Full Phone Control Debug APK:</strong> Export the ready-to-build Android project with GitHub Actions CI/CD or deploy directly with USB/ADB debugging.
+                  <strong>Full A-to-Z Phone Control APK:</strong> Download the built APK directly from GitHub Releases or export the Android project.
                 </p>
               </div>
             )}

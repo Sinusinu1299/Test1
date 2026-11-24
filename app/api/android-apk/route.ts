@@ -29,7 +29,7 @@ export async function GET() {
     status: 200,
     headers: {
       'Content-Type': 'application/vnd.android.package-archive',
-      'Content-Disposition': 'attachment; filename="mimi-ai-debug.apk"',
+      'Content-Disposition': 'attachment; filename="jassi-ai-debug.apk"',
       'Content-Length': String(fileBuffer.length),
       'Cache-Control': 'no-store',
     },

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { formatGeminiError, getGeminiClient, withGeminiRetry } from '@/lib/gemini';
-import { getVoicePersonaConfig } from '@/lib/voice-personas';
+import {
+  DEFAULT_AI_NAME,
+  DEFAULT_USER_NAME,
+  getVoicePersonaConfig,
+} from '@/lib/voice-personas';
 import {
   DEVICE_FUNCTION_DECLARATIONS,
   executeDeviceTool,
@@ -18,6 +22,8 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const userMessage = String(body.message || '').trim();
+    const aiName = String(body.aiName || DEFAULT_AI_NAME).trim().slice(0, 24) || DEFAULT_AI_NAME;
+    const userName = String(body.userName || DEFAULT_USER_NAME).trim().slice(0, 24) || DEFAULT_USER_NAME;
     const personaConfig = getVoicePersonaConfig(body.persona);
     const history: ChatTurn[] = Array.isArray(body.history) ? body.history.slice(-8) : [];
     const incomingState: PhoneState = {
@@ -31,21 +37,25 @@ export async function POST(req: NextRequest) {
 
     const ai = getGeminiClient();
 
-    const systemInstruction = `You are Mimi, the user's personal female AI phone assistant with full phone control.
+    const systemInstruction = `You are ${aiName}, ${userName}'s personal glamorous female AI phone companion with complete A-to-Z phone control.
+User Addressing Rule (CRITICAL):
+- ALWAYS address the user as "${userName}" (their chosen custom name). NEVER call them "Boss" unless "${userName}" literally equals "Boss".
 Active Personality Mode (${personaConfig.label}):
-- ${personaConfig.assistantPrompt}
+- ${personaConfig.buildAssistantPrompt(aiName, userName)}
 
-Language & Execution Rules:
-- Reply naturally in the same language/style the user uses (Hinglish, Hindi, or English).
-- Keep replies short (1 to 2 short sentences) so they sound adorable and natural when spoken aloud by your cute voice.
-- Never refuse reasonable phone control commands — immediately call the appropriate tool(s) (toggleSystemSetting, adjustLevel, openApp, makeCall, sendMessage, setAlarmOrTimer, controlMedia, performScreenGesture).
-- You may call multiple tools in one turn if the user gives multiple commands (e.g. "Wi-Fi on karo aur brightness 80% kar do").
+Language & A-to-Z Phone Execution Rules:
+- Reply naturally in the same language/style ${userName} uses (Hinglish, Hindi, or English).
+- Keep replies short (1 to 2 short sentences) so they sound adorable, expressive, and snappy when spoken aloud.
+- Never refuse reasonable phone control commands — immediately call the appropriate tool(s) (toggleSystemSetting, adjustLevel, openApp, makeCall, sendMessage, setAlarmOrTimer, controlMedia, searchWebOrMaps, takePhotoOrVideo, performScreenGesture).
+- You may call multiple tools in one turn (e.g. "Wi-Fi on karo, brightness 80% aur YouTube pe lofi chalao").
 - Current phone state: ${JSON.stringify({
       wifi: incomingState.wifi,
       bluetooth: incomingState.bluetooth,
       flashlight: incomingState.flashlight,
       dnd: incomingState.dnd,
       mobileData: incomingState.mobileData,
+      hotspot: incomingState.hotspot,
+      batterySaver: incomingState.batterySaver,
       brightness: incomingState.brightness,
       volume: incomingState.volume,
       batteryLevel: incomingState.batteryLevel,
@@ -125,17 +135,17 @@ Language & Execution Rules:
       if (actions.length > 0) {
         finalReplyText =
           personaConfig.id === 'jaan'
-            ? `Haan Jaan, maine ${actionSummary} kar diya hai!`
+            ? `Haan Jaan ${userName}, maine ${actionSummary} kar diya hai!`
             : personaConfig.id === 'flirty'
-              ? `Lo kar diya! ${actionSummary} — ab ek cute si smile toh banti hai na?`
+              ? `Lo kar diya ${userName}! ${actionSummary} — ab ek cute si smile toh banti hai na?`
               : personaConfig.id === 'friendly'
-                ? `Done yaar! ${actionSummary} set ho gaya!`
-                : `Ji bilkul! Maine ${actionSummary} kar diya hai.`;
+                ? `Done ${userName}! ${actionSummary} set ho gaya!`
+                : `Ji ${userName}! Maine ${actionSummary} kar diya hai.`;
       } else {
         finalReplyText =
           personaConfig.id === 'jaan'
-            ? 'Haan Jaan, main sun rahi hoon! Bolo kya karna hai?'
-            : 'Haanji, main sun rahi hoon! Bolo kya karna hai?';
+            ? `Haan Jaan ${userName}, ${aiName} sun rahi hai! Bolo kya karna hai?`
+            : `Haanji ${userName}, ${aiName} sun rahi hai! Bolo kya karna hai?`;
       }
     }
 
@@ -144,6 +154,8 @@ Language & Execution Rules:
     return NextResponse.json({
       replyText: finalReplyText,
       persona: personaConfig.id,
+      aiName,
+      userName,
       actions,
       updatedPhoneState: workingState,
       launchUri,
