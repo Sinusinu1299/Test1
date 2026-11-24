@@ -37,22 +37,22 @@ export function PWAInstallButton({ onOpenAndroidTab }: PWAInstallButtonProps) {
 
       {showGuide && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/50 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/60 p-4 backdrop-blur-sm dark:bg-black/75"
           role="dialog"
           aria-modal="true"
           aria-labelledby="install-guide-title"
         >
-          <div className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-6 shadow-xl">
+          <div className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-6 shadow-xl dark:border-zinc-800 dark:bg-[#121216]">
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400">
                   <Smartphone className="h-5 w-5" aria-hidden="true" />
                 </div>
                 <div>
-                  <h3 id="install-guide-title" className="text-base font-bold text-stone-900">
+                  <h3 id="install-guide-title" className="text-base font-bold text-stone-900 dark:text-zinc-100">
                     Install Mimi on Your Phone
                   </h3>
-                  <p className="text-xs text-stone-500">
+                  <p className="text-xs text-stone-500 dark:text-zinc-400">
                     {isIOS ? 'iPhone & iPad Safari' : 'Android Chrome & GitHub APK'}
                   </p>
                 </div>
@@ -61,20 +61,20 @@ export function PWAInstallButton({ onOpenAndroidTab }: PWAInstallButtonProps) {
                 type="button"
                 onClick={() => setShowGuide(false)}
                 aria-label="Close install guide"
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100 hover:text-stone-900"
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100 hover:text-stone-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
               >
                 <X className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
 
             {isIOS ? (
-              <ol className="mt-4 space-y-2.5 text-sm text-stone-700">
+              <ol className="mt-4 space-y-2.5 text-sm text-stone-700 dark:text-zinc-300">
                 <li>1. Tap the <strong>Share</strong> icon in the Safari toolbar.</li>
                 <li>2. Scroll down and tap <strong>Add to Home Screen</strong>.</li>
                 <li>3. Tap <strong>Add</strong> to launch Mimi as a standalone app.</li>
               </ol>
             ) : (
-              <div className="mt-4 space-y-3 text-sm text-stone-700">
+              <div className="mt-4 space-y-3 text-sm text-stone-700 dark:text-zinc-300">
                 <p>
                   <strong>Instant Home-Screen App:</strong> Open this URL in Android Chrome, tap the menu (three dots), and choose <strong>Install app</strong>.
                 </p>
@@ -100,7 +100,7 @@ export function PWAInstallButton({ onOpenAndroidTab }: PWAInstallButtonProps) {
               <button
                 type="button"
                 onClick={() => setShowGuide(false)}
-                className="rounded-xl border border-stone-200 px-4 py-2.5 text-xs font-semibold text-stone-700 hover:bg-stone-50 whitespace-nowrap"
+                className="rounded-xl border border-stone-200 px-4 py-2.5 text-xs font-semibold text-stone-700 hover:bg-stone-50 whitespace-nowrap dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
               >
                 Close
               </button>

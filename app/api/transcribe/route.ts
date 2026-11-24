@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getGeminiClient } from '@/lib/gemini';
+import { formatGeminiError, getGeminiClient, withGeminiRetry } from '@/lib/gemini';
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,28 +13,32 @@ export async function POST(req: NextRequest) {
 
     const ai = getGeminiClient();
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.5-transcribe',
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType,
-              data: audioBase64,
+    const response = await withGeminiRetry(() =>
+      ai.models.generateContent({
+        model: 'gemini-3.5-transcribe',
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                mimeType,
+                data: audioBase64,
+              },
             },
-          },
-          {
-            text: 'Transcribe the spoken Hinglish, Hindi, or English voice command accurately in Latin/Roman script or Devanagari as spoken. Return only the transcription text.',
-          },
-        ],
-      },
-    });
+            {
+              text: 'Transcribe the spoken Hinglish, Hindi, or English voice command accurately in Latin/Roman script or Devanagari as spoken. Return only the transcription text.',
+            },
+          ],
+        },
+      })
+    );
 
     return NextResponse.json({
       text: (response.text || '').trim(),
     });
   } catch (error) {
-    const errMsg = error instanceof Error ? error.message : 'Audio transcription failed.';
-    return NextResponse.json({ error: errMsg }, { status: 500 });
+    return NextResponse.json(
+      { error: formatGeminiError(error, 'Audio transcription failed.') },
+      { status: 500 }
+    );
   }
 }

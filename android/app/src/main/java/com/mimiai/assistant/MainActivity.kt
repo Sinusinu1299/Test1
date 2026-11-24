@@ -2,6 +2,8 @@ package com.mimiai.assistant
 
 import android.Manifest
 import android.app.NotificationManager
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.media.MediaPlayer
@@ -14,6 +16,7 @@ import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -23,6 +26,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -46,6 +52,15 @@ class MainActivity : ComponentActivity() {
     private var speechRecognizer: SpeechRecognizer? = null
     private var mediaPlayer: MediaPlayer? = null
 
+    private val voiceModes = listOf(
+        "all_in_one" to "All-in-One",
+        "jaan" to "Jaan",
+        "friendly" to "Friendly",
+        "flirty" to "Flirty",
+        "bubbly" to "Bubbly",
+        "calm" to "Soft"
+    )
+
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { }
@@ -63,57 +78,122 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val scope = rememberCoroutineScope()
+            val lifecycleOwner = LocalLifecycleOwner.current
+
             var baseUrl by remember { mutableStateOf(defaultBaseUrl) }
             var commandInput by remember { mutableStateOf("") }
-            var status by remember { mutableStateOf("Tap Mic & speak in Hinglish or Hindi") }
-            var reply by remember { mutableStateOf("Hii! Main Mimi hoon. Bolo aaj kya karoon?") }
+            var selectedPersona by remember { mutableStateOf("all_in_one") }
+            var status by remember { mutableStateOf("All-in-One Girl Voice · Hinglish & Hindi") }
+            var reply by remember { mutableStateOf("Hii Jaan! Main Mimi hoon — All-in-One mode mein. Bolo kya karoon?") }
+            var debugLog by remember { mutableStateOf("Ready for GitHub & ADB Debug") }
             var listening by remember { mutableStateOf(false) }
             var busy by remember { mutableStateOf(false) }
             var showDebugPanel by remember { mutableStateOf(true) }
+            var blackMode by remember { mutableStateOf(true) }
 
-            val accessibilityEnabled = MimiAccessibilityService.instance != null
-            val writeSettingsGranted = Settings.System.canWrite(this@MainActivity)
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            val dndGranted = nm.isNotificationPolicyAccessGranted
+            var accessibilityEnabled by remember { mutableStateOf(MimiAccessibilityService.instance != null) }
+            var writeSettingsGranted by remember { mutableStateOf(Settings.System.canWrite(this@MainActivity)) }
+            var dndGranted by remember {
+                mutableStateOf(
+                    (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                        .isNotificationPolicyAccessGranted
+                )
+            }
+
+            DisposableEffect(lifecycleOwner) {
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_RESUME) {
+                        accessibilityEnabled = MimiAccessibilityService.instance != null
+                        writeSettingsGranted = Settings.System.canWrite(this@MainActivity)
+                        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                        dndGranted = nm.isNotificationPolicyAccessGranted
+                    }
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+            }
 
             val coral = Color(0xFFE11D48)
-
-            MaterialTheme(
-                colorScheme = lightColorScheme(
-                    primary = coral,
-                    surface = Color(0xFFFAF8F7),
-                    background = Color(0xFFFAF8F7)
+            val colorScheme = if (blackMode) {
+                darkColorScheme(
+                    primary = Color(0xFFF43F5E),
+                    background = Color(0xFF09090B),
+                    surface = Color(0xFF09090B),
+                    surfaceVariant = Color(0xFF141418),
+                    onBackground = Color(0xFFFAFAFA),
+                    onSurface = Color(0xFFFAFAFA)
                 )
-            ) {
+            } else {
+                lightColorScheme(
+                    primary = coral,
+                    background = Color(0xFFFAF8F7),
+                    surface = Color(0xFFFAF8F7),
+                    surfaceVariant = Color(0xFFF3EFEF)
+                )
+            }
+
+            MaterialTheme(colorScheme = colorScheme) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState())
                             .padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text("Mimi AI", style = MaterialTheme.typography.headlineSmall)
                                 Text(
                                     text = status,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Color(0xFF57534E)
+                                    color = if (blackMode) Color(0xFFA1A1AA) else Color(0xFF57534E)
                                 )
                             }
-                            TextButton(onClick = { showDebugPanel = !showDebugPanel }) {
-                                Text(if (showDebugPanel) "Hide Debug" else "Debug Info")
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                TextButton(onClick = { blackMode = !blackMode }) {
+                                    Text(if (blackMode) "Light" else "Black")
+                                }
+                                TextButton(onClick = { showDebugPanel = !showDebugPanel }) {
+                                    Text(if (showDebugPanel) "Hide Debug" else "Debug")
+                                }
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            voiceModes.forEach { (id, label) ->
+                                FilterChip(
+                                    selected = selectedPersona == id,
+                                    onClick = {
+                                        selectedPersona = id
+                                        reply = when (id) {
+                                            "jaan" -> "Hii meri Jaan! Main hamesha aapke saath hoon. Bolo kya karoon?"
+                                            "friendly" -> "Heyy bestie! Chill karo, bolo phone mein kya set karna hai?"
+                                            "flirty" -> "Hii handsome! Aaj bade pyaar se yaad kiya? Bolo kya command hai!"
+                                            "bubbly" -> "Hii! Main Mimi hoon — bolo aaj kya karna hai?"
+                                            "calm" -> "Hello... aaram se bolo, main pyaar se kar doongi."
+                                            else -> "Hii Jaan! All-in-One mode ready hai — Friendly, Flirty ya Phone Control, bolo!"
+                                        }
+                                    },
+                                    label = { Text(label) }
+                                )
                             }
                         }
 
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = Color.White)
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (blackMode) Color(0xFF141418) else Color.White
+                            )
                         ) {
                             Text(
                                 text = reply,
@@ -141,7 +221,9 @@ class MainActivity : ComponentActivity() {
                                         busy = true
                                         status = "You: $cmd"
                                         scope.launch {
-                                            reply = askMimiAndSpeak(baseUrl, cmd)
+                                            val res = askMimiAndSpeak(baseUrl, cmd, selectedPersona)
+                                            reply = res.first
+                                            debugLog = res.second
                                             status = "Done"
                                             busy = false
                                         }
@@ -172,7 +254,9 @@ class MainActivity : ComponentActivity() {
                                     status = "You: $spokenText"
                                     busy = true
                                     scope.launch {
-                                        reply = askMimiAndSpeak(baseUrl, spokenText)
+                                        val res = askMimiAndSpeak(baseUrl, spokenText, selectedPersona)
+                                        reply = res.first
+                                        debugLog = res.second
                                         status = "Ready"
                                         busy = false
                                     }
@@ -197,7 +281,9 @@ class MainActivity : ComponentActivity() {
                                 onClick = {
                                     scope.launch {
                                         busy = true
-                                        reply = askMimiAndSpeak(baseUrl, "Flashlight on karo")
+                                        val res = askMimiAndSpeak(baseUrl, "Flashlight on karo", selectedPersona)
+                                        reply = res.first
+                                        debugLog = res.second
                                         busy = false
                                     }
                                 },
@@ -208,7 +294,9 @@ class MainActivity : ComponentActivity() {
                                 onClick = {
                                     scope.launch {
                                         busy = true
-                                        reply = askMimiAndSpeak(baseUrl, "Brightness 40% kar do")
+                                        val res = askMimiAndSpeak(baseUrl, "Brightness 40% kar do", selectedPersona)
+                                        reply = res.first
+                                        debugLog = res.second
                                         busy = false
                                     }
                                 },
@@ -219,21 +307,28 @@ class MainActivity : ComponentActivity() {
                         if (showDebugPanel) {
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F2F0))
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (blackMode) Color(0xFF141418) else Color(0xFFF5F2F0)
+                                )
                             ) {
                                 Column(
                                     modifier = Modifier.padding(16.dp),
                                     verticalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
                                     Text(
-                                        "Direct Debugging & Permissions",
+                                        "Direct & GitHub Debug Console",
                                         style = MaterialTheme.typography.titleSmall
                                     )
                                     Text(
-                                        "Accessibility: ${if (accessibilityEnabled) "Connected" else "Off"} · " +
-                                            "Write Settings: ${if (writeSettingsGranted) "Granted" else "Off"} · " +
+                                        "Mode: $selectedPersona · A11y: ${if (accessibilityEnabled) "Connected" else "Off"} · " +
+                                            "Write: ${if (writeSettingsGranted) "Granted" else "Off"} · " +
                                             "DND: ${if (dndGranted) "Granted" else "Off"}",
                                         style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Text(
+                                        text = debugLog,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (blackMode) Color(0xFFA1A1AA) else Color(0xFF57534E)
                                     )
                                     OutlinedTextField(
                                         value = baseUrl,
@@ -242,6 +337,32 @@ class MainActivity : ComponentActivity() {
                                         singleLine = true,
                                         modifier = Modifier.fillMaxWidth()
                                     )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    debugLog = pingBackend(baseUrl)
+                                                }
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("Ping Server") }
+                                        OutlinedButton(
+                                            onClick = {
+                                                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                cm.setPrimaryClip(
+                                                    ClipData.newPlainText(
+                                                        "MimiDebugLog",
+                                                        "URL=$baseUrl\nMode=$selectedPersona\nA11y=$accessibilityEnabled\nWrite=$writeSettingsGranted\nDND=$dndGranted\nLog=$debugLog"
+                                                    )
+                                                )
+                                                status = "Debug log copied"
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("Copy Log") }
+                                    }
                                     OutlinedButton(
                                         onClick = {
                                             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
@@ -296,60 +417,99 @@ class MainActivity : ComponentActivity() {
         speechRecognizer?.startListening(intent)
     }
 
-    private suspend fun askMimiAndSpeak(serverUrl: String, command: String): String =
-        withContext(Dispatchers.IO) {
-            val cleanBase = serverUrl.trim().removeSuffix("/")
-            val jsonMedia = "application/json; charset=utf-8".toMediaType()
-            val payload = JSONObject().put("message", command).toString()
-            val req = Request.Builder()
-                .url("$cleanBase/api/assistant")
-                .post(payload.toRequestBody(jsonMedia))
-                .build()
-
-            val respBody = runCatching {
-                client.newCall(req).execute().use { it.body?.string() }
-            }.getOrNull() ?: return@withContext "Server se connect nahi ho paya. URL check karo."
-
-            val json = runCatching { JSONObject(respBody) }.getOrNull()
-                ?: return@withContext "Invalid response from server."
-            val replyText = json.optString("replyText", "Done!")
-
-            withContext(Dispatchers.Main) {
-                controller.applyAssistantResponse(json)
+    private suspend fun pingBackend(serverUrl: String): String = withContext(Dispatchers.IO) {
+        val started = System.currentTimeMillis()
+        val cleanBase = serverUrl.trim().removeSuffix("/")
+        val req = Request.Builder().url(cleanBase).head().build()
+        runCatching {
+            client.newCall(req).execute().use { resp ->
+                val ms = System.currentTimeMillis() - started
+                "Server HTTP ${resp.code} in ${ms}ms"
             }
+        }.getOrElse { err ->
+            "Ping failed: ${err.message ?: "Unknown error"}"
+        }
+    }
 
-            val ttsPayload = JSONObject()
-                .put("text", replyText)
-                .put("persona", "bubbly")
-                .toString()
-            val ttsReq = Request.Builder()
-                .url("$cleanBase/api/tts")
-                .post(ttsPayload.toRequestBody(jsonMedia))
-                .build()
+    private suspend fun askMimiAndSpeak(
+        serverUrl: String,
+        command: String,
+        persona: String
+    ): Pair<String, String> = withContext(Dispatchers.IO) {
+        val started = System.currentTimeMillis()
+        val cleanBase = serverUrl.trim().removeSuffix("/")
+        val jsonMedia = "application/json; charset=utf-8".toMediaType()
+        val payload = JSONObject()
+            .put("message", command)
+            .put("persona", persona)
+            .toString()
+        val req = Request.Builder()
+            .url("$cleanBase/api/assistant")
+            .post(payload.toRequestBody(jsonMedia))
+            .build()
 
-            val ttsResp = runCatching {
-                client.newCall(ttsReq).execute().use { it.body?.string() }
-            }.getOrNull()
+        var statusCode = 0
+        val respBody = runCatching {
+            client.newCall(req).execute().use {
+                statusCode = it.code
+                it.body?.string()
+            }
+        }.getOrNull() ?: return@withContext Pair(
+            "Server se connect nahi ho paya. URL check karo.",
+            "POST /api/assistant -> Network failure"
+        )
 
-            if (ttsResp != null) {
-                val audioBase64 = runCatching { JSONObject(ttsResp).optString("audioBase64", "") }
-                    .getOrDefault("")
-                if (audioBase64.isNotEmpty()) {
-                    val wavBytes = Base64.decode(audioBase64, Base64.DEFAULT)
-                    val tempWav = File(cacheDir, "mimi_reply.wav")
-                    tempWav.writeBytes(wavBytes)
-                    withContext(Dispatchers.Main) {
-                        mediaPlayer?.release()
-                        mediaPlayer = MediaPlayer().apply {
-                            setDataSource(tempWav.absolutePath)
-                            prepare()
-                            start()
-                        }
+        val json = runCatching { JSONObject(respBody) }.getOrNull()
+            ?: return@withContext Pair(
+                "Invalid response from server.",
+                "HTTP $statusCode -> Non-JSON body"
+            )
+
+        if (json.has("error")) {
+            val errMsg = json.optString("error", "Server error")
+            return@withContext Pair(errMsg, "HTTP $statusCode -> $errMsg")
+        }
+
+        val replyText = json.optString("replyText", "Done!")
+        val actionCount = json.optJSONArray("actions")?.length() ?: 0
+
+        withContext(Dispatchers.Main) {
+            controller.applyAssistantResponse(json)
+        }
+
+        val ttsPayload = JSONObject()
+            .put("text", replyText)
+            .put("persona", persona)
+            .toString()
+        val ttsReq = Request.Builder()
+            .url("$cleanBase/api/tts")
+            .post(ttsPayload.toRequestBody(jsonMedia))
+            .build()
+
+        val ttsResp = runCatching {
+            client.newCall(ttsReq).execute().use { it.body?.string() }
+        }.getOrNull()
+
+        if (ttsResp != null) {
+            val audioBase64 = runCatching { JSONObject(ttsResp).optString("audioBase64", "") }
+                .getOrDefault("")
+            if (audioBase64.isNotEmpty()) {
+                val wavBytes = Base64.decode(audioBase64, Base64.DEFAULT)
+                val tempWav = File(cacheDir, "mimi_reply.wav")
+                tempWav.writeBytes(wavBytes)
+                withContext(Dispatchers.Main) {
+                    mediaPlayer?.release()
+                    mediaPlayer = MediaPlayer().apply {
+                        setDataSource(tempWav.absolutePath)
+                        prepare()
+                        start()
                     }
                 }
             }
-            replyText
         }
+        val elapsed = System.currentTimeMillis() - started
+        Pair(replyText, "HTTP $statusCode · mode=$persona · ${actionCount} action(s) · ${elapsed}ms")
+    }
 
     override fun onDestroy() {
         super.onDestroy()

@@ -58,9 +58,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="en"
-      className={`${plusJakarta.variable} ${dmSans.variable} ${jetbrainsMono.variable}`}
+      suppressHydrationWarning
+      className={`dark ${plusJakarta.variable} ${dmSans.variable} ${jetbrainsMono.variable}`}
     >
-      <body suppressHydrationWarning className="min-h-screen antialiased selection:bg-rose-100 selection:text-rose-900">
+      <body
+        suppressHydrationWarning
+        className="min-h-screen bg-[#FAF8F7] text-stone-900 antialiased selection:bg-rose-100 selection:text-rose-900 dark:bg-[#09090B] dark:text-zinc-100 dark:selection:bg-rose-900/50 dark:selection:text-rose-100"
+      >
         {children}
       </body>
     </html>

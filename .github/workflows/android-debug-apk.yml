@@ -24,6 +24,11 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install Android 35 SDK & Build Tools
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -31,7 +36,25 @@ jobs:
 
       - name: Build Debug APK
         working-directory: android
-        run: gradle assembleDebug --no-daemon
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Run Android Debug Lint
+        working-directory: android
+        run: gradle lintDebug --no-daemon
+
+      - name: Verify Debug APK Integrity
+        run: |
+          APK_PATH="android/app/build/outputs/apk/debug/app-debug.apk"
+          test -f "$APK_PATH"
+          unzip -tq "$APK_PATH"
+          APK_SIZE=$(ls -lh "$APK_PATH" | awk '{print $5}')
+          {
+            echo "## Mimi AI Debug APK Build Verified"
+            echo "- **Artifact:** \`mimi-ai-debug-apk\`"
+            echo "- **Package:** \`com.mimiai.assistant\`"
+            echo "- **APK Size:** \`$APK_SIZE\`"
+            echo "- **Install:** Download \`mimi-ai-debug-apk\` from Artifacts above, unzip, and install \`app-debug.apk\` on Android."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
@@ -40,3 +63,14 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Upload GitHub Debug Lint & Build Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mimi-ai-debug-reports
+          path: |
+            android/app/build/reports/
+            android/build/reports/
+          if-no-files-found: ignore
+          retention-days: 14

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getGeminiClient } from '@/lib/gemini';
+import { formatGeminiError, getGeminiClient, withGeminiRetry } from '@/lib/gemini';
+import { getVoicePersonaConfig } from '@/lib/voice-personas';
 import {
   DEVICE_FUNCTION_DECLARATIONS,
   executeDeviceTool,
@@ -17,6 +18,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const userMessage = String(body.message || '').trim();
+    const personaConfig = getVoicePersonaConfig(body.persona);
     const history: ChatTurn[] = Array.isArray(body.history) ? body.history.slice(-8) : [];
     const incomingState: PhoneState = {
       ...INITIAL_PHONE_STATE,
@@ -29,11 +31,13 @@ export async function POST(req: NextRequest) {
 
     const ai = getGeminiClient();
 
-    const systemInstruction = `You are Mimi, the user's sweet, super-loyal, caring, and cute female AI phone assistant.
-Language & Tone:
+    const systemInstruction = `You are Mimi, the user's personal female AI phone assistant with full phone control.
+Active Personality Mode (${personaConfig.label}):
+- ${personaConfig.assistantPrompt}
+
+Language & Execution Rules:
 - Reply naturally in the same language/style the user uses (Hinglish, Hindi, or English).
-- Your personality is affectionate, cheerful, obedient, and crisp — like a sweet best friend who instantly obeys every command ("Ji bilkul!", "Haanji, abhi kar deti hoon!", "Lo ho gaya!", "Aur kuch batao na!").
-- Keep replies short (1 to 2 short sentences) so they sound adorable when spoken aloud by your cute voice.
+- Keep replies short (1 to 2 short sentences) so they sound adorable and natural when spoken aloud by your cute voice.
 - Never refuse reasonable phone control commands — immediately call the appropriate tool(s) (toggleSystemSetting, adjustLevel, openApp, makeCall, sendMessage, setAlarmOrTimer, controlMedia, performScreenGesture).
 - You may call multiple tools in one turn if the user gives multiple commands (e.g. "Wi-Fi on karo aur brightness 80% kar do").
 - Current phone state: ${JSON.stringify({
@@ -59,14 +63,16 @@ Language & Tone:
       { role: 'user', parts: [{ text: userMessage }] },
     ];
 
-    const firstResponse = await ai.models.generateContent({
-      model: 'gemini-4-hydrogen',
-      contents,
-      config: {
-        systemInstruction,
-        tools: [{ functionDeclarations: DEVICE_FUNCTION_DECLARATIONS }],
-      },
-    });
+    const firstResponse = await withGeminiRetry(() =>
+      ai.models.generateContent({
+        model: 'gemini-4-hydrogen',
+        contents,
+        config: {
+          systemInstruction,
+          tools: [{ functionDeclarations: DEVICE_FUNCTION_DECLARATIONS }],
+        },
+      })
+    );
 
     const functionCalls = firstResponse.functionCalls;
     let workingState = incomingState;
@@ -93,42 +99,59 @@ Language & Tone:
       });
 
       if (previousContent) {
-        const secondResponse = await ai.models.generateContent({
-          model: 'gemini-4-hydrogen',
-          contents: [
-            ...contents,
-            previousContent,
-            {
-              role: 'user',
-              parts: functionResponseParts,
+        const secondResponse = await withGeminiRetry(() =>
+          ai.models.generateContent({
+            model: 'gemini-4-hydrogen',
+            contents: [
+              ...contents,
+              previousContent,
+              {
+                role: 'user',
+                parts: functionResponseParts,
+              },
+            ],
+            config: {
+              systemInstruction,
+              tools: [{ functionDeclarations: DEVICE_FUNCTION_DECLARATIONS }],
             },
-          ],
-          config: {
-            systemInstruction,
-            tools: [{ functionDeclarations: DEVICE_FUNCTION_DECLARATIONS }],
-          },
-        });
+          })
+        );
         finalReplyText = secondResponse.text?.trim() || finalReplyText;
       }
     }
 
     if (!finalReplyText) {
-      finalReplyText =
-        actions.length > 0
-          ? `Ji bilkul! Maine ${actions.map((a) => a.summary).join(' aur ')} kar diya hai.`
-          : 'Haanji, main sun rahi hoon! Bolo kya karna hai?';
+      const actionSummary = actions.map((a) => a.summary).join(' aur ');
+      if (actions.length > 0) {
+        finalReplyText =
+          personaConfig.id === 'jaan'
+            ? `Haan Jaan, maine ${actionSummary} kar diya hai!`
+            : personaConfig.id === 'flirty'
+              ? `Lo kar diya! ${actionSummary} — ab ek cute si smile toh banti hai na?`
+              : personaConfig.id === 'friendly'
+                ? `Done yaar! ${actionSummary} set ho gaya!`
+                : `Ji bilkul! Maine ${actionSummary} kar diya hai.`;
+      } else {
+        finalReplyText =
+          personaConfig.id === 'jaan'
+            ? 'Haan Jaan, main sun rahi hoon! Bolo kya karna hai?'
+            : 'Haanji, main sun rahi hoon! Bolo kya karna hai?';
+      }
     }
 
     const launchUri = actions.find((a) => a.launchUri)?.launchUri || null;
 
     return NextResponse.json({
       replyText: finalReplyText,
+      persona: personaConfig.id,
       actions,
       updatedPhoneState: workingState,
       launchUri,
     });
   } catch (error) {
-    const errMsg = error instanceof Error ? error.message : 'Assistant request failed.';
-    return NextResponse.json({ error: errMsg }, { status: 500 });
+    return NextResponse.json(
+      { error: formatGeminiError(error, 'Assistant request failed.') },
+      { status: 500 }
+    );
   }
 }

@@ -12,11 +12,13 @@ export function buildAndroidProjectFiles(backendBaseUrl: string): AndroidProject
     {
       path: 'android/app/src/main/java/com/mimiai/assistant/MainActivity.kt',
       language: 'kotlin',
-      description: 'Jetpack Compose UI, Hinglish SpeechRecognizer, cute girl WAV playback, and Direct Debug permissions.',
+      description: 'Jetpack Compose UI with Black Mode, All-in-One Girl Voice Modes (Jaan/Friendly/Flirty), ON_RESUME permission refresh, and Direct & GitHub Debug console.',
       content: `package com.mimiai.assistant
 
 import android.Manifest
 import android.app.NotificationManager
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.media.MediaPlayer
@@ -29,6 +31,7 @@ import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -38,6 +41,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -61,6 +67,15 @@ class MainActivity : ComponentActivity() {
     private var speechRecognizer: SpeechRecognizer? = null
     private var mediaPlayer: MediaPlayer? = null
 
+    private val voiceModes = listOf(
+        "all_in_one" to "All-in-One",
+        "jaan" to "Jaan",
+        "friendly" to "Friendly",
+        "flirty" to "Flirty",
+        "bubbly" to "Bubbly",
+        "calm" to "Soft"
+    )
+
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { }
@@ -78,50 +93,128 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val scope = rememberCoroutineScope()
+            val lifecycleOwner = LocalLifecycleOwner.current
+
             var baseUrl by remember { mutableStateOf(defaultBaseUrl) }
             var commandInput by remember { mutableStateOf("") }
-            var status by remember { mutableStateOf("Tap Mic & speak in Hinglish or Hindi") }
-            var reply by remember { mutableStateOf("Hii! Main Mimi hoon. Bolo aaj kya karoon?") }
+            var selectedPersona by remember { mutableStateOf("all_in_one") }
+            var status by remember { mutableStateOf("All-in-One Girl Voice · Hinglish & Hindi") }
+            var reply by remember { mutableStateOf("Hii Jaan! Main Mimi hoon — All-in-One mode mein. Bolo kya karoon?") }
+            var debugLog by remember { mutableStateOf("Ready for GitHub & ADB Debug") }
             var listening by remember { mutableStateOf(false) }
             var busy by remember { mutableStateOf(false) }
             var showDebugPanel by remember { mutableStateOf(true) }
+            var blackMode by remember { mutableStateOf(true) }
 
-            val accessibilityEnabled = MimiAccessibilityService.instance != null
-            val writeSettingsGranted = Settings.System.canWrite(this@MainActivity)
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            val dndGranted = nm.isNotificationPolicyAccessGranted
-
-            MaterialTheme(
-                colorScheme = lightColorScheme(
-                    primary = Color(0xFFE11D48),
-                    surface = Color(0xFFFAF8F7),
-                    background = Color(0xFFFAF8F7)
+            var accessibilityEnabled by remember { mutableStateOf(MimiAccessibilityService.instance != null) }
+            var writeSettingsGranted by remember { mutableStateOf(Settings.System.canWrite(this@MainActivity)) }
+            var dndGranted by remember {
+                mutableStateOf(
+                    (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                        .isNotificationPolicyAccessGranted
                 )
-            ) {
+            }
+
+            DisposableEffect(lifecycleOwner) {
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_RESUME) {
+                        accessibilityEnabled = MimiAccessibilityService.instance != null
+                        writeSettingsGranted = Settings.System.canWrite(this@MainActivity)
+                        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                        dndGranted = nm.isNotificationPolicyAccessGranted
+                    }
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+            }
+
+            val coral = Color(0xFFE11D48)
+            val colorScheme = if (blackMode) {
+                darkColorScheme(
+                    primary = Color(0xFFF43F5E),
+                    background = Color(0xFF09090B),
+                    surface = Color(0xFF09090B),
+                    surfaceVariant = Color(0xFF141418),
+                    onBackground = Color(0xFFFAFAFA),
+                    onSurface = Color(0xFFFAFAFA)
+                )
+            } else {
+                lightColorScheme(
+                    primary = coral,
+                    background = Color(0xFFFAF8F7),
+                    surface = Color(0xFFFAF8F7),
+                    surfaceVariant = Color(0xFFF3EFEF)
+                )
+            }
+
+            MaterialTheme(colorScheme = colorScheme) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState())
                             .padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text("Mimi AI", style = MaterialTheme.typography.headlineSmall)
-                                Text(status, style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    text = status,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (blackMode) Color(0xFFA1A1AA) else Color(0xFF57534E)
+                                )
                             }
-                            TextButton(onClick = { showDebugPanel = !showDebugPanel }) {
-                                Text(if (showDebugPanel) "Hide Debug" else "Debug Info")
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                TextButton(onClick = { blackMode = !blackMode }) {
+                                    Text(if (blackMode) "Light" else "Black")
+                                }
+                                TextButton(onClick = { showDebugPanel = !showDebugPanel }) {
+                                    Text(if (showDebugPanel) "Hide Debug" else "Debug")
+                                }
                             }
                         }
 
-                        Card(modifier = Modifier.fillMaxWidth()) {
-                            Text(reply, modifier = Modifier.padding(18.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            voiceModes.forEach { (id, label) ->
+                                FilterChip(
+                                    selected = selectedPersona == id,
+                                    onClick = {
+                                        selectedPersona = id
+                                        reply = when (id) {
+                                            "jaan" -> "Hii meri Jaan! Main hamesha aapke saath hoon. Bolo kya karoon?"
+                                            "friendly" -> "Heyy bestie! Chill karo, bolo phone mein kya set karna hai?"
+                                            "flirty" -> "Hii handsome! Aaj bade pyaar se yaad kiya? Bolo kya command hai!"
+                                            "bubbly" -> "Hii! Main Mimi hoon — bolo aaj kya karna hai?"
+                                            "calm" -> "Hello... aaram se bolo, main pyaar se kar doongi."
+                                            else -> "Hii Jaan! All-in-One mode ready hai — Friendly, Flirty ya Phone Control, bolo!"
+                                        }
+                                    },
+                                    label = { Text(label) }
+                                )
+                            }
+                        }
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (blackMode) Color(0xFF141418) else Color.White
+                            )
+                        ) {
+                            Text(
+                                text = reply,
+                                modifier = Modifier.padding(18.dp),
+                                style = MaterialTheme.typography.bodyLarge
+                            )
                         }
 
                         Row(
@@ -131,7 +224,7 @@ class MainActivity : ComponentActivity() {
                             OutlinedTextField(
                                 value = commandInput,
                                 onValueChange = { commandInput = it },
-                                placeholder = { Text("Type command...") },
+                                placeholder = { Text("Type command (e.g. Flashlight on karo)") },
                                 singleLine = true,
                                 modifier = Modifier.weight(1f)
                             )
@@ -141,14 +234,21 @@ class MainActivity : ComponentActivity() {
                                     if (cmd.isNotEmpty() && !busy) {
                                         commandInput = ""
                                         busy = true
+                                        status = "You: \$cmd"
                                         scope.launch {
-                                            reply = askMimiAndSpeak(baseUrl, cmd)
+                                            val res = askMimiAndSpeak(baseUrl, cmd, selectedPersona)
+                                            reply = res.first
+                                            debugLog = res.second
+                                            status = "Done"
                                             busy = false
                                         }
                                     }
                                 },
+                                enabled = !busy && commandInput.isNotBlank(),
                                 modifier = Modifier.height(56.dp)
-                            ) { Text("Send") }
+                            ) {
+                                Text("Send")
+                            }
                         }
 
                         Button(
@@ -162,36 +262,88 @@ class MainActivity : ComponentActivity() {
                                 status = "Sun rahi hoon..."
                                 startVoiceInput { spokenText ->
                                     listening = false
-                                    if (spokenText.isNotBlank()) {
-                                        status = "You: \$spokenText"
-                                        busy = true
-                                        scope.launch {
-                                            reply = askMimiAndSpeak(baseUrl, spokenText)
-                                            busy = false
-                                        }
+                                    if (spokenText.isBlank()) {
+                                        status = "Could not hear clearly. Try again."
+                                        return@startVoiceInput
+                                    }
+                                    status = "You: \$spokenText"
+                                    busy = true
+                                    scope.launch {
+                                        val res = askMimiAndSpeak(baseUrl, spokenText, selectedPersona)
+                                        reply = res.first
+                                        debugLog = res.second
+                                        status = "Ready"
+                                        busy = false
                                     }
                                 }
                             },
                             modifier = Modifier.fillMaxWidth().height(54.dp)
                         ) {
-                            Text(if (listening) "Listening..." else "Speak to Mimi (Hinglish / Hindi)")
+                            Text(
+                                when {
+                                    listening -> "Listening... (Tap to stop)"
+                                    busy -> "Mimi is thinking..."
+                                    else -> "Speak to Mimi (Hinglish / Hindi)"
+                                }
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    scope.launch {
+                                        busy = true
+                                        val res = askMimiAndSpeak(baseUrl, "Flashlight on karo", selectedPersona)
+                                        reply = res.first
+                                        debugLog = res.second
+                                        busy = false
+                                    }
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("Torch ON") }
+
+                            OutlinedButton(
+                                onClick = {
+                                    scope.launch {
+                                        busy = true
+                                        val res = askMimiAndSpeak(baseUrl, "Brightness 40% kar do", selectedPersona)
+                                        reply = res.first
+                                        debugLog = res.second
+                                        busy = false
+                                    }
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("Bright 40%") }
                         }
 
                         if (showDebugPanel) {
-                            Card(modifier = Modifier.fillMaxWidth()) {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (blackMode) Color(0xFF141418) else Color(0xFFF5F2F0)
+                                )
+                            ) {
                                 Column(
                                     modifier = Modifier.padding(16.dp),
                                     verticalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
                                     Text(
-                                        "Direct Debugging & Permissions",
+                                        "Direct & GitHub Debug Console",
                                         style = MaterialTheme.typography.titleSmall
                                     )
                                     Text(
-                                        "Accessibility: \${if (accessibilityEnabled) "Connected" else "Off"} · " +
-                                            "Write Settings: \${if (writeSettingsGranted) "Granted" else "Off"} · " +
+                                        "Mode: \$selectedPersona · A11y: \${if (accessibilityEnabled) "Connected" else "Off"} · " +
+                                            "Write: \${if (writeSettingsGranted) "Granted" else "Off"} · " +
                                             "DND: \${if (dndGranted) "Granted" else "Off"}",
                                         style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Text(
+                                        text = debugLog,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (blackMode) Color(0xFFA1A1AA) else Color(0xFF57534E)
                                     )
                                     OutlinedTextField(
                                         value = baseUrl,
@@ -200,10 +352,53 @@ class MainActivity : ComponentActivity() {
                                         singleLine = true,
                                         modifier = Modifier.fillMaxWidth()
                                     )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    debugLog = pingBackend(baseUrl)
+                                                }
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("Ping Server") }
+                                        OutlinedButton(
+                                            onClick = {
+                                                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                cm.setPrimaryClip(
+                                                    ClipData.newPlainText(
+                                                        "MimiDebugLog",
+                                                        "URL=\$baseUrl\\nMode=\$selectedPersona\\nA11y=\$accessibilityEnabled\\nWrite=\$writeSettingsGranted\\nDND=\$dndGranted\\nLog=\$debugLog"
+                                                    )
+                                                )
+                                                status = "Debug log copied"
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("Copy Log") }
+                                    }
                                     OutlinedButton(
-                                        onClick = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                                        onClick = {
+                                            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                                        },
                                         modifier = Modifier.fillMaxWidth()
-                                    ) { Text("1. Enable Accessibility Service") }
+                                    ) {
+                                        Text("1. Enable Accessibility Service")
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = { controller.openWriteSettings() },
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("2. Brightness Perm") }
+                                        OutlinedButton(
+                                            onClick = { controller.openDndSettings() },
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("3. Silent / DND Perm") }
+                                    }
                                 }
                             }
                         }
@@ -222,7 +417,8 @@ class MainActivity : ComponentActivity() {
         }
         speechRecognizer?.setRecognitionListener(object : RecognitionListener {
             override fun onResults(results: Bundle?) {
-                onResult(results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull() ?: "")
+                val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
+                onResult(text ?: "")
             }
             override fun onError(error: Int) { onResult("") }
             override fun onReadyForSpeech(params: Bundle?) {}
@@ -236,21 +432,82 @@ class MainActivity : ComponentActivity() {
         speechRecognizer?.startListening(intent)
     }
 
-    private suspend fun askMimiAndSpeak(serverUrl: String, command: String): String = withContext(Dispatchers.IO) {
+    private suspend fun pingBackend(serverUrl: String): String = withContext(Dispatchers.IO) {
+        val started = System.currentTimeMillis()
+        val cleanBase = serverUrl.trim().removeSuffix("/")
+        val req = Request.Builder().url(cleanBase).head().build()
+        runCatching {
+            client.newCall(req).execute().use { resp ->
+                val ms = System.currentTimeMillis() - started
+                "Server HTTP \${resp.code} in \${ms}ms"
+            }
+        }.getOrElse { err ->
+            "Ping failed: \${err.message ?: "Unknown error"}"
+        }
+    }
+
+    private suspend fun askMimiAndSpeak(
+        serverUrl: String,
+        command: String,
+        persona: String
+    ): Pair<String, String> = withContext(Dispatchers.IO) {
+        val started = System.currentTimeMillis()
         val cleanBase = serverUrl.trim().removeSuffix("/")
         val jsonMedia = "application/json; charset=utf-8".toMediaType()
-        val payload = JSONObject().put("message", command).toString()
-        val req = Request.Builder().url("\$cleanBase/api/assistant").post(payload.toRequestBody(jsonMedia)).build()
-        val respBody = client.newCall(req).execute().use { it.body?.string() } ?: return@withContext "Network error"
-        val json = JSONObject(respBody)
-        val replyText = json.optString("replyText", "Done!")
-        withContext(Dispatchers.Main) { controller.applyAssistantResponse(json) }
+        val payload = JSONObject()
+            .put("message", command)
+            .put("persona", persona)
+            .toString()
+        val req = Request.Builder()
+            .url("\$cleanBase/api/assistant")
+            .post(payload.toRequestBody(jsonMedia))
+            .build()
 
-        val ttsPayload = JSONObject().put("text", replyText).put("persona", "bubbly").toString()
-        val ttsReq = Request.Builder().url("\$cleanBase/api/tts").post(ttsPayload.toRequestBody(jsonMedia)).build()
-        val ttsResp = client.newCall(ttsReq).execute().use { it.body?.string() }
+        var statusCode = 0
+        val respBody = runCatching {
+            client.newCall(req).execute().use {
+                statusCode = it.code
+                it.body?.string()
+            }
+        }.getOrNull() ?: return@withContext Pair(
+            "Server se connect nahi ho paya. URL check karo.",
+            "POST /api/assistant -> Network failure"
+        )
+
+        val json = runCatching { JSONObject(respBody) }.getOrNull()
+            ?: return@withContext Pair(
+                "Invalid response from server.",
+                "HTTP \$statusCode -> Non-JSON body"
+            )
+
+        if (json.has("error")) {
+            val errMsg = json.optString("error", "Server error")
+            return@withContext Pair(errMsg, "HTTP \$statusCode -> \$errMsg")
+        }
+
+        val replyText = json.optString("replyText", "Done!")
+        val actionCount = json.optJSONArray("actions")?.length() ?: 0
+
+        withContext(Dispatchers.Main) {
+            controller.applyAssistantResponse(json)
+        }
+
+        val ttsPayload = JSONObject()
+            .put("text", replyText)
+            .put("persona", persona)
+            .toString()
+        val ttsReq = Request.Builder()
+            .url("\$cleanBase/api/tts")
+            .post(ttsPayload.toRequestBody(jsonMedia))
+            .build()
+
+        val ttsResp = runCatching {
+            client.newCall(ttsReq).execute().use { it.body?.string() }
+        }.getOrNull()
+
         if (ttsResp != null) {
-            val audioBase64 = JSONObject(ttsResp).optString("audioBase64", "")
+            val audioBase64 = runCatching { JSONObject(ttsResp).optString("audioBase64", "") }
+                .getOrDefault("")
             if (audioBase64.isNotEmpty()) {
                 val wavBytes = Base64.decode(audioBase64, Base64.DEFAULT)
                 val tempWav = File(cacheDir, "mimi_reply.wav")
@@ -265,7 +522,14 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        replyText
+        val elapsed = System.currentTimeMillis() - started
+        Pair(replyText, "HTTP \$statusCode · mode=\$persona · \${actionCount} action(s) · \${elapsed}ms")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        speechRecognizer?.destroy()
+        mediaPlayer?.release()
     }
 }
 `,
@@ -490,7 +754,7 @@ class MimiAccessibilityService : AccessibilityService() {
     {
       path: 'android/app/build.gradle.kts',
       language: 'gradle',
-      description: 'AGP 8.7 + Kotlin 2.0 Compose Compiler build configuration with isDebuggable = true.',
+      description: 'AGP 8.7 + Kotlin 2.0 Compose Compiler + Lifecycle Compose + Debug Lint options.',
       content: `plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -534,11 +798,17 @@ android {
     buildFeatures {
         compose = true
     }
+
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
+    }
 }
 
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation(platform("androidx.compose:compose-bom:2024.11.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -610,7 +880,7 @@ zipStorePath=wrapper/dists
     {
       path: 'android/app/src/main/AndroidManifest.xml',
       language: 'xml',
-      description: 'Android permissions and AccessibilityService declaration.',
+      description: 'Android 11+ <queries>, permissions, and AccessibilityService declaration.',
       content: `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
@@ -623,6 +893,31 @@ zipStorePath=wrapper/dists
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.CALL" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SET_ALARM" />
+        </intent>
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.whatsapp" />
+        <package android:name="com.instagram.android" />
+        <package android:name="com.spotify.music" />
+        <package android:name="com.google.android.apps.maps" />
+        <package android:name="com.android.chrome" />
+    </queries>
 
     <application
         android:allowBackup="true"
@@ -660,6 +955,16 @@ zipStorePath=wrapper/dists
 `,
     },
     {
+      path: 'android/app/src/debug/AndroidManifest.xml',
+      language: 'xml',
+      description: 'Debug-only manifest allowing local HTTP server testing.',
+      content: `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:usesCleartextTraffic="true" />
+</manifest>
+`,
+    },
+    {
       path: 'android/app/src/main/res/values/strings.xml',
       language: 'xml',
       description: 'String resources required by AndroidManifest and Accessibility config.',
@@ -688,7 +993,7 @@ zipStorePath=wrapper/dists
     {
       path: '.github/workflows/android-debug-apk.yml',
       language: 'yaml',
-      description: 'GitHub Actions workflow to build app-debug.apk and upload it as an artifact.',
+      description: 'GitHub Actions workflow: builds Debug APK, runs lintDebug, verifies APK zip integrity, and uploads APK + Debug Reports.',
       content: `name: Build Android Debug APK
 
 on:
@@ -715,6 +1020,11 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install Android 35 SDK & Build Tools
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -722,7 +1032,25 @@ jobs:
 
       - name: Build Debug APK
         working-directory: android
-        run: gradle assembleDebug --no-daemon
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Run Android Debug Lint
+        working-directory: android
+        run: gradle lintDebug --no-daemon
+
+      - name: Verify Debug APK Integrity
+        run: |
+          APK_PATH="android/app/build/outputs/apk/debug/app-debug.apk"
+          test -f "$APK_PATH"
+          unzip -tq "$APK_PATH"
+          APK_SIZE=$(ls -lh "$APK_PATH" | awk '{print $5}')
+          {
+            echo "## Mimi AI Debug APK Build Verified"
+            echo "- **Artifact:** \`mimi-ai-debug-apk\`"
+            echo "- **Package:** \`com.mimiai.assistant\`"
+            echo "- **APK Size:** \`$APK_SIZE\`"
+            echo "- **Install:** Download \`mimi-ai-debug-apk\` from Artifacts above, unzip, and install \`app-debug.apk\` on Android."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
@@ -731,18 +1059,29 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Upload GitHub Debug Lint & Build Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mimi-ai-debug-reports
+          path: |
+            android/app/build/reports/
+            android/build/reports/
+          if-no-files-found: ignore
+          retention-days: 14
 `,
     },
     {
       path: 'README.md',
       language: 'markdown',
-      description: 'Instructions for Direct ADB Debugging and GitHub Actions APK install.',
+      description: 'Instructions for Direct ADB Debugging, Black Mode, and GitHub Actions APK install.',
       content: `# Mimi AI — Android App Setup
 
 ## Option 1: Install from GitHub Actions
 1. Push this folder to a GitHub repository.
 2. Open the **Actions** tab on GitHub and click **Build Android Debug APK**.
-3. Download the **mimi-ai-debug-apk** artifact and install \`app-debug.apk\` on your Android phone.
+3. Download **mimi-ai-debug-apk** (APK) or **mimi-ai-debug-reports** (Lint/Debug logs) and install \`app-debug.apk\` on your Android phone.
 
 ## Option 2: Direct Debugging (USB / Wireless ADB)
 1. Enable **Developer Options -> USB Debugging** on your Android phone.

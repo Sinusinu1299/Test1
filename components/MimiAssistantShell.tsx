@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   Send,
   Smartphone,
@@ -10,6 +10,8 @@ import {
   Code2,
   ExternalLink,
   AlertCircle,
+  Moon,
+  Sun,
 } from 'lucide-react';
 import {
   ActionLogItem,
@@ -21,7 +23,32 @@ import { AssistantPhase, VoiceOrb } from '@/components/VoiceOrb';
 import { PhoneControlPanel } from '@/components/PhoneControlPanel';
 import { AndroidProjectExport } from '@/components/AndroidProjectExport';
 import { PWAInstallButton } from '@/components/PWAInstallButton';
-import type { VoicePersonaId } from '@/app/api/tts/route';
+import {
+  VOICE_PERSONAS,
+  getVoicePersonaConfig,
+  type VoicePersonaId,
+} from '@/lib/voice-personas';
+
+const THEME_STORAGE_KEY = 'mimi-black-mode';
+
+function subscribeTheme(callback: () => void) {
+  window.addEventListener('storage', callback);
+  window.addEventListener('mimi-theme-change', callback);
+  return () => {
+    window.removeEventListener('storage', callback);
+    window.removeEventListener('mimi-theme-change', callback);
+  };
+}
+
+function getThemeSnapshot(): boolean {
+  if (typeof window === 'undefined') return true;
+  const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+  return saved === null ? true : saved === 'true';
+}
+
+function getThemeServerSnapshot(): boolean {
+  return true;
+}
 
 interface MessageItem {
   id: string;
@@ -41,12 +68,6 @@ const QUICK_COMMANDS = [
   'Subah 6:30 ka alarm lagao',
   'Silent mode on karo',
   'Mummy ko call lagao',
-];
-
-const VOICE_PERSONAS: { id: VoicePersonaId; label: string }[] = [
-  { id: 'bubbly', label: 'Cute & Bubbly' },
-  { id: 'sweet', label: 'Sweet & Warm' },
-  { id: 'calm', label: 'Soft & Gentle' },
 ];
 
 interface SpeechRecognitionAlternativeLike {
@@ -73,22 +94,40 @@ interface SpeechRecognitionInstanceLike {
 }
 
 export function MimiAssistantShell() {
+  const blackMode = useSyncExternalStore(
+    subscribeTheme,
+    getThemeSnapshot,
+    getThemeServerSnapshot
+  );
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', blackMode);
+  }, [blackMode]);
+
+  const handleToggleBlackMode = () => {
+    const next = !blackMode;
+    window.localStorage.setItem(THEME_STORAGE_KEY, String(next));
+    document.documentElement.classList.toggle('dark', next);
+    window.dispatchEvent(new Event('mimi-theme-change'));
+  };
+
   const [phoneState, setPhoneState] = useState<PhoneState>(INITIAL_PHONE_STATE);
   const [messages, setMessages] = useState<MessageItem[]>([
     {
       id: 'welcome-1',
       role: 'assistant',
-      text: 'Hii! Main Mimi hoon. Aapka phone mere control mein hai — bolo kya karna hai?',
+      text: getVoicePersonaConfig('all_in_one').greetingText,
     },
   ]);
   const [actionLog, setActionLog] = useState<ActionLogItem[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [phase, setPhase] = useState<AssistantPhase>('idle');
-  const [persona, setPersona] = useState<VoicePersonaId>('bubbly');
+  const [persona, setPersona] = useState<VoicePersonaId>('all_in_one');
   const [voiceMuted, setVoiceMuted] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [desktopRightTab, setDesktopRightTab] = useState<DesktopRightTab>('controls');
   const [mobileTab, setMobileTab] = useState<MobileTab>('assistant');
+  const activePersonaConfig = getVoicePersonaConfig(persona);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const recognitionRef = useRef<SpeechRecognitionInstanceLike | null>(null);
@@ -200,6 +239,7 @@ export function MimiAssistantShell() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             message: command,
+            persona,
             history,
             phoneState,
           }),
@@ -253,7 +293,7 @@ export function MimiAssistantShell() {
         setErrorMsg(err instanceof Error ? err.message : 'Something went wrong.');
       }
     },
-    [messages, phoneState, speakWithMimiVoice, stopAudio, voiceMuted]
+    [messages, persona, phoneState, speakWithMimiVoice, stopAudio, voiceMuted]
   );
 
   const startFallbackRecording = async () => {
@@ -307,7 +347,9 @@ export function MimiAssistantShell() {
       setPhase('listening');
     } catch {
       setPhase('idle');
-      setErrorMsg('Microphone access was blocked. Please allow mic permission or type below.');
+      setErrorMsg(
+        'Mic is preview iframe mein block ho sakta hai — Chrome Site Settings mein Microphone allow karo, ya neeche type/tap karke Mimi ki cute voice suno!'
+      );
     }
   };
 
@@ -351,7 +393,9 @@ export function MimiAssistantShell() {
         rec.onerror = (ev) => {
           if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
             setPhase('idle');
-            setErrorMsg('Microphone permission denied. Please allow mic access or type below.');
+            setErrorMsg(
+              'Mic access preview iframe mein blocked hai — Chrome lock icon se Microphone allow karo ya standalone Android app/tab mein kholo. Tab tak type ya Quick Commands try karo!'
+            );
           } else {
             void startFallbackRecording();
           }
@@ -427,22 +471,35 @@ export function MimiAssistantShell() {
     }
   };
 
+  const handleSelectPersona = (nextId: VoicePersonaId) => {
+    setPersona(nextId);
+    const nextCfg = getVoicePersonaConfig(nextId);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `mode-${Date.now()}`,
+        role: 'assistant',
+        text: nextCfg.greetingText,
+      },
+    ]);
+  };
+
   return (
-    <div className="min-h-screen bg-[#FAF8F7] text-stone-900 pb-20 lg:pb-8">
-      <header className="sticky top-0 z-30 border-b border-stone-200/80 bg-[#FAF8F7]/90 backdrop-blur-md">
+    <div className="min-h-screen bg-[#FAF8F7] text-stone-900 pb-20 lg:pb-8 dark:bg-[#09090B] dark:text-zinc-100">
+      <header className="sticky top-0 z-30 border-b border-stone-200/80 bg-[#FAF8F7]/90 backdrop-blur-md dark:border-zinc-800/80 dark:bg-[#09090B]/90">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-8 px-4 sm:px-6">
           <a
             href="#top"
-            className="text-lg font-bold tracking-tight text-stone-900 whitespace-nowrap shrink-0"
+            className="text-lg font-bold tracking-tight text-stone-900 whitespace-nowrap shrink-0 dark:text-zinc-100"
           >
             Mimi AI
           </a>
 
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-stone-600">
+          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-stone-600 dark:text-zinc-400">
             <button
               type="button"
               onClick={() => navigateToSection('assistant')}
-              className="hover:text-stone-900 transition-colors whitespace-nowrap shrink-0"
+              className="hover:text-stone-900 transition-colors whitespace-nowrap shrink-0 dark:hover:text-zinc-100"
             >
               Assistant
             </button>
@@ -451,8 +508,8 @@ export function MimiAssistantShell() {
               onClick={() => navigateToSection('controls')}
               className={`transition-colors whitespace-nowrap shrink-0 ${
                 desktopRightTab === 'controls'
-                  ? 'text-stone-900 underline decoration-rose-500 decoration-2 underline-offset-4'
-                  : 'hover:text-stone-900'
+                  ? 'text-stone-900 underline decoration-rose-500 decoration-2 underline-offset-4 dark:text-zinc-100'
+                  : 'hover:text-stone-900 dark:hover:text-zinc-100'
               }`}
             >
               Phone Controls
@@ -462,8 +519,8 @@ export function MimiAssistantShell() {
               onClick={() => navigateToSection('android')}
               className={`transition-colors whitespace-nowrap shrink-0 ${
                 desktopRightTab === 'android'
-                  ? 'text-stone-900 underline decoration-rose-500 decoration-2 underline-offset-4'
-                  : 'hover:text-stone-900'
+                  ? 'text-stone-900 underline decoration-rose-500 decoration-2 underline-offset-4 dark:text-zinc-100'
+                  : 'hover:text-stone-900 dark:hover:text-zinc-100'
               }`}
             >
               Android App
@@ -481,32 +538,54 @@ export function MimiAssistantShell() {
           aria-label="Mimi Voice Assistant"
           className={`lg:col-span-5 ${mobileTab === 'assistant' ? 'block' : 'hidden lg:block'}`}
         >
-          <div className="flex flex-col rounded-3xl border border-stone-200 bg-white p-5 shadow-xs">
-            <div className="flex items-center justify-between gap-3 border-b border-stone-100 pb-3">
-              <div>
-                <h1 className="text-lg font-bold tracking-tight text-stone-900">
+          <div className="flex flex-col rounded-3xl border border-stone-200 bg-white p-5 shadow-xs dark:border-zinc-800 dark:bg-[#121216]">
+            <div className="flex items-start justify-between gap-3 border-b border-stone-100 pb-3 dark:border-zinc-800">
+              <div className="min-w-0">
+                <h1 className="text-lg font-bold tracking-tight text-stone-900 dark:text-zinc-100">
                   Mimi Voice Companion
                 </h1>
-                <p className="text-xs text-stone-500">
-                  Hinglish &amp; Hindi · Cute Girl Voice
+                <p className="truncate text-xs text-stone-500 dark:text-zinc-400">
+                  {activePersonaConfig.tagline}
                 </p>
               </div>
-              <div className="flex items-center gap-1 rounded-xl bg-stone-100 p-1">
-                {VOICE_PERSONAS.map((vp) => (
+              <button
+                type="button"
+                onClick={handleToggleBlackMode}
+                aria-label={blackMode ? 'Switch to Light Mode' : 'Switch to Black Mode'}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs font-semibold text-stone-700 transition-colors hover:bg-stone-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+              >
+                {blackMode ? (
+                  <>
+                    <Sun className="h-3.5 w-3.5 text-amber-400" aria-hidden="true" />
+                    <span>Light</span>
+                  </>
+                ) : (
+                  <>
+                    <Moon className="h-3.5 w-3.5 text-stone-700" aria-hidden="true" />
+                    <span>Black</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1">
+              {VOICE_PERSONAS.map((vp) => {
+                const active = persona === vp.id;
+                return (
                   <button
                     key={vp.id}
                     type="button"
-                    onClick={() => setPersona(vp.id)}
-                    className={`rounded-lg px-2.5 py-1 text-[11px] font-medium transition-colors whitespace-nowrap ${
-                      persona === vp.id
-                        ? 'bg-white text-stone-900 shadow-xs'
-                        : 'text-stone-600 hover:text-stone-900'
+                    onClick={() => handleSelectPersona(vp.id)}
+                    className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 min-h-[34px] ${
+                      active
+                        ? 'border-rose-500 bg-rose-600 text-white'
+                        : 'border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
                     }`}
                   >
-                    {vp.label.split(' ')[0]}
+                    {vp.shortLabel}
                   </button>
-                ))}
-              </div>
+                );
+              })}
             </div>
 
             <VoiceOrb
@@ -523,9 +602,9 @@ export function MimiAssistantShell() {
             {errorMsg && (
               <div
                 role="alert"
-                className="mb-3 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs text-rose-800"
+                className="mb-3 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/50 dark:text-rose-200"
               >
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" aria-hidden="true" />
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" aria-hidden="true" />
                 <span>{errorMsg}</span>
               </div>
             )}
@@ -541,14 +620,14 @@ export function MimiAssistantShell() {
                   <div
                     className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
                       msg.role === 'user'
-                        ? 'bg-stone-900 text-white'
-                        : 'bg-stone-100 text-stone-900'
+                        ? 'bg-stone-900 text-white dark:bg-rose-600 dark:text-white'
+                        : 'bg-stone-100 text-stone-900 dark:border dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100'
                     }`}
                   >
                     <p>{msg.text}</p>
 
                     {msg.actions && msg.actions.length > 0 && (
-                      <div className="mt-2 border-t border-stone-200/80 pt-1.5 text-xs text-stone-600">
+                      <div className="mt-2 border-t border-stone-200/80 pt-1.5 text-xs text-stone-600 dark:border-zinc-800 dark:text-zinc-400">
                         {msg.actions.map((act, i) => (
                           <p key={i} className="font-medium">
                             {act.summary}
@@ -562,7 +641,7 @@ export function MimiAssistantShell() {
                         <button
                           type="button"
                           onClick={() => void speakWithMimiVoice(msg.text)}
-                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 hover:underline"
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 hover:underline dark:text-rose-400"
                         >
                           <Volume2 className="h-3 w-3" aria-hidden="true" />
                           <span>Speak again</span>
@@ -572,7 +651,7 @@ export function MimiAssistantShell() {
                             href={msg.launchUri}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-stone-800 hover:underline"
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-stone-800 hover:underline dark:text-zinc-200"
                           >
                             <span>Open on Phone</span>
                             <ExternalLink className="h-3 w-3" aria-hidden="true" />
@@ -593,7 +672,7 @@ export function MimiAssistantShell() {
                   type="button"
                   onClick={() => void sendCommand(cmd)}
                   disabled={phase === 'thinking'}
-                  className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs font-medium text-stone-700 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 whitespace-nowrap shrink-0 min-h-[38px]"
+                  className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs font-medium text-stone-700 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 whitespace-nowrap shrink-0 min-h-[38px] dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-rose-500/50 dark:hover:bg-rose-950/40 dark:hover:text-rose-300"
                 >
                   {cmd}
                 </button>
@@ -605,7 +684,7 @@ export function MimiAssistantShell() {
                 e.preventDefault();
                 void sendCommand(inputValue);
               }}
-              className="mt-3 flex items-center gap-2 border-t border-stone-100 pt-3"
+              className="mt-3 flex items-center gap-2 border-t border-stone-100 pt-3 dark:border-zinc-800"
             >
               <input
                 type="text"
@@ -613,7 +692,7 @@ export function MimiAssistantShell() {
                 onChange={(e) => setInputValue(e.target.value)}
                 placeholder="Bolo Mimi ko... (e.g. Wi-Fi off karo)"
                 aria-label="Type a voice or text command for Mimi"
-                className="min-h-[44px] flex-1 rounded-xl border border-stone-200 bg-stone-50 px-3.5 text-sm text-stone-900 placeholder:text-stone-400 focus:border-rose-400 focus:bg-white focus:outline-none"
+                className="min-h-[44px] flex-1 rounded-xl border border-stone-200 bg-stone-50 px-3.5 text-sm text-stone-900 placeholder:text-stone-400 focus:border-rose-400 focus:bg-white focus:outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-rose-500 dark:focus:bg-zinc-900"
               />
               <button
                 type="submit"
@@ -634,14 +713,14 @@ export function MimiAssistantShell() {
           }`}
         >
           <div className="mb-5 hidden lg:flex items-center justify-between gap-4">
-            <div className="inline-flex items-center gap-1 rounded-xl bg-stone-200/70 p-1">
+            <div className="inline-flex items-center gap-1 rounded-xl bg-stone-200/70 p-1 dark:bg-zinc-900 dark:border dark:border-zinc-800">
               <button
                 type="button"
                 onClick={() => navigateToSection('controls')}
                 className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors whitespace-nowrap ${
                   desktopRightTab === 'controls'
-                    ? 'bg-white text-stone-900 shadow-xs'
-                    : 'text-stone-600 hover:text-stone-900'
+                    ? 'bg-white text-stone-900 shadow-xs dark:bg-zinc-800 dark:text-zinc-100'
+                    : 'text-stone-600 hover:text-stone-900 dark:text-zinc-400 dark:hover:text-zinc-200'
                 }`}
               >
                 <Sliders className="h-3.5 w-3.5" aria-hidden="true" />
@@ -652,15 +731,15 @@ export function MimiAssistantShell() {
                 onClick={() => navigateToSection('android')}
                 className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors whitespace-nowrap ${
                   desktopRightTab === 'android'
-                    ? 'bg-white text-stone-900 shadow-xs'
-                    : 'text-stone-600 hover:text-stone-900'
+                    ? 'bg-white text-stone-900 shadow-xs dark:bg-zinc-800 dark:text-zinc-100'
+                    : 'text-stone-600 hover:text-stone-900 dark:text-zinc-400 dark:hover:text-zinc-200'
                 }`}
               >
                 <Code2 className="h-3.5 w-3.5" aria-hidden="true" />
                 <span>Android APK &amp; GitHub</span>
               </button>
             </div>
-            <p className="text-xs text-stone-500">
+            <p className="text-xs text-stone-500 dark:text-zinc-400">
               {desktopRightTab === 'controls'
                 ? 'Synced live with Mimi commands'
                 : 'Debug APK & GitHub Actions CI'}
@@ -687,13 +766,13 @@ export function MimiAssistantShell() {
 
       <nav
         aria-label="Mobile Navigation"
-        className="fixed bottom-0 left-0 right-0 z-40 grid h-16 grid-cols-3 items-center border-t border-stone-200 bg-white/95 backdrop-blur-md lg:hidden"
+        className="fixed bottom-0 left-0 right-0 z-40 grid h-16 grid-cols-3 items-center border-t border-stone-200 bg-white/95 backdrop-blur-md lg:hidden dark:border-zinc-800 dark:bg-[#09090B]/95"
       >
         <button
           type="button"
           onClick={() => navigateToSection('assistant')}
           className={`flex h-full flex-col items-center justify-center gap-1 text-[11px] font-medium ${
-            mobileTab === 'assistant' ? 'text-rose-600' : 'text-stone-500'
+            mobileTab === 'assistant' ? 'text-rose-600 dark:text-rose-400' : 'text-stone-500 dark:text-zinc-400'
           }`}
         >
           <MessageCircle className="h-5 w-5" aria-hidden="true" />
@@ -704,7 +783,7 @@ export function MimiAssistantShell() {
           type="button"
           onClick={() => navigateToSection('controls')}
           className={`flex h-full flex-col items-center justify-center gap-1 text-[11px] font-medium ${
-            mobileTab === 'controls' ? 'text-rose-600' : 'text-stone-500'
+            mobileTab === 'controls' ? 'text-rose-600 dark:text-rose-400' : 'text-stone-500 dark:text-zinc-400'
           }`}
         >
           <Sliders className="h-5 w-5" aria-hidden="true" />
@@ -715,7 +794,7 @@ export function MimiAssistantShell() {
           type="button"
           onClick={() => navigateToSection('android')}
           className={`flex h-full flex-col items-center justify-center gap-1 text-[11px] font-medium ${
-            mobileTab === 'android' ? 'text-rose-600' : 'text-stone-500'
+            mobileTab === 'android' ? 'text-rose-600 dark:text-rose-400' : 'text-stone-500 dark:text-zinc-400'
           }`}
         >
           <Smartphone className="h-5 w-5" aria-hidden="true" />
